@@ -44,6 +44,14 @@ outcome vs b18's smooth scoreLead.)
 | depth6 (v0) | −106 | — | — |
 | **depth6_v2** (supervised, 7.4M pos) | −70 | −125 | **−97** |
 | **depth6_distill** (b18, 0.10M pos) | −59 | −70 | **−64** |
+| **depth6_distill_1m** (b18, 0.997M pos) | −109 | −15 | **−62** |
+
+`depth6_distill_1m` beat `depth6_distill` head-to-head (+30, one game), but its avg vs b6c96
+is unchanged from the 10×-smaller distill set — and the ±50-point per-game swing for the *same*
+net (−109 as B, −15 as W) shows single-game judging can't resolve differences this small.
+10× more distillation data gave at best a marginal gain; at ~1M params with plain blocks we
+look capacity/target-saturated. Next levers: a multi-game **arena** (to measure), and **nbt
+blocks** (more strength per param) over more data.
 
 Head-to-head `depth6_distill` vs `depth6_v2` (b18 judge): roughly even (−0.8 and +5.0 across
 the two color assignments) — close in direct play, but distill is clearly better against the
