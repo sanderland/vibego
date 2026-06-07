@@ -1,0 +1,12 @@
+[submodule "katago"]
+	path = katago
+	url = https://github.com/lightvector/KataGo.git
+[submodule "nanochat"]
+	path = nanochat
+	url = https://github.com/karpathy/nanochat.git
+[submodule "nanogpt"]
+	path = nanogpt
+	url = https://github.com/karpathy/nanoGPT.git
+[submodule "katrain"]
+	path = katrain
+	url = https://github.com/sanderland/katrain.git

@@ -67,3 +67,29 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Python / nanogo
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+uv.lock
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# checkpoints, runs, data
+*.pt
+*.ckpt
+checkpoints/
+runs/
+wandb/
+data/
+models/
+*.bin.gz
+*.npz
+*.npy
+
+# local agent state
+.claude/
