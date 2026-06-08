@@ -71,13 +71,40 @@ fixed strong reference (b6c96) while using ~70× less data.
 5. **Single-game judging is noisy** (large color asymmetries, area-vs-judge disagreements). A
    multi-game arena (Elo ± CI) is needed for a reliable number.
 
+## Diagnostics: is the gap the net or the search?
+
+Two tools decompose the gap (both sidestep noisy full games):
+
+- **`scripts/policy_eval.py`** — raw policy/value agreement with a reference net (no search).
+  vs **b18**, 300 positions:
+
+  | net | top-1 | top-5 | value MAE |
+  |-----|-------|-------|-----------|
+  | ours (distill_1m) | 38.3% | 71.3% | 0.213 |
+  | b6c96 | 33.0% | 63.7% | 0.226 |
+
+  Our raw net matches b18 at least as well as b6c96 does (**biased** — we distilled from b18,
+  the reference). Takeaway: the **network is not the bottleneck**.
+
+- **`scripts/run_engine.py -proxy "<katago>"` + `nanogo/engine/proxy.py`** — run *our* MCTS on
+  an external net (search-correctness test). our-search+b6c96 vs KataGo's own search, same
+  b6c96 net, 48 visits (b18 judge): our side lost **both colors (−44, −165)**. Single-game
+  noise inflates the 165, but losing both with the identical net shows **our search is
+  materially weaker per visit** than KataGo's.
+
+**Conclusion: the in-game gap to b6c96 is dominated by SEARCH, not the net.** Likely causes
+(impact order): our Q is **win-rate only and ignores score** (KataGo's utility values score
+margin); move selection by **raw visit count** (vs LCB/playSelectionValue); untuned cpuct/FPU.
+
 ## Open items / next
 
-- `depth6_distill_1m`: ~1M b18-labeled positions, more steps — measure if distill keeps scaling.
-- Multi-game **arena** (Elo ± CI) for the final comparison instead of single games.
+- **Improve the search (highest priority)**: add score to the PUCT utility, LCB/value move
+  selection, tune cpuct/FPU — diagnostics say this is where most of the gap is.
+- Expand features: **territory / pass-alive (18,19)** — cheap (reuse area flood-fill); ladder
+  history (15,16) needs prev-board reconstruction in the engine.
+- Multi-game **arena** (Elo ± CI) for final comparisons instead of single games.
 - **Teacher ensembling** (average b18 + b28 + b40 policies, still 1 visit) as the next target-
   quality lever over searched policy.
-- Searched-policy relabel (`--visits > 1`) if we ever spend more compute on targets.
 
 ## Validation / correctness
 

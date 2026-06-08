@@ -64,6 +64,13 @@ class NNEvaluator:
             raise req.error
         return req.out
 
+    def evaluate_boards(self, boards, komi: float, pos_len: int) -> list[dict]:
+        """Board -> eval dict (encode our feature subset, batched forward, legal-masked)."""
+        feats = [encode_board(b, komi, pos_len, self.spatial_subset, self.global_subset)
+                 for b in boards]
+        raws = self.infer(feats)
+        return [raw_to_eval(b, raw, pos_len) for b, raw in zip(boards, raws)]
+
     def _loop(self):
         from time import monotonic
         while True:
@@ -159,10 +166,9 @@ class MCTS:
         self.vloss_weight = vloss_weight
 
     def _eval_boards(self, boards: list[Board]) -> list[dict]:
-        feats = [encode_board(b, self.komi, self.pos_len,
-                              self.ev.spatial_subset, self.ev.global_subset) for b in boards]
-        raws = self.ev.infer(feats)
-        return [raw_to_eval(b, raw, self.pos_len) for b, raw in zip(boards, raws)]
+        # The evaluator owns board -> eval, so alternative evaluators (e.g. a KataGo proxy that
+        # asks an external engine) can plug in without touching the search.
+        return self.ev.evaluate_boards(boards, self.komi, self.pos_len)
 
     def prepare(self, root_board: Board) -> Node:
         root = Node(None, 1.0)
