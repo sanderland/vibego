@@ -35,12 +35,14 @@ def _player_str(p: int) -> str:
 
 class AnalysisEngine:
     def __init__(self, evaluator: NNEvaluator, pos_len: int,
-                 default_visits: int = 100, leaf_batch: int = 16, lcb_stdevs: float = 1.0):
+                 default_visits: int = 100, leaf_batch: int = 16, lcb_stdevs: float = 1.0,
+                 mcts_kwargs: dict | None = None):
         self.ev = evaluator
         self.pos_len = pos_len
         self.default_visits = default_visits
         self.leaf_batch = leaf_batch  # leaves collected per search step (virtual loss)
         self.lcb_stdevs = lcb_stdevs  # move selection LCB width (0 = pure mean-value)
+        self.mcts_kwargs = mcts_kwargs or {}  # extra MCTS params (value_weight_exp, etc.)
         self._terminated: set[str] = set()
         self._term_epoch = 0  # incremented by terminate_all; a query started earlier is dead
         self._queue: queue.Queue = queue.Queue()
@@ -168,7 +170,7 @@ class AnalysisEngine:
         visits = int(q.get("maxVisits", self.default_visits))
         report_every = q.get("reportDuringSearchEvery")
         board = self._build_board(q, turn)
-        mcts = MCTS(self.ev, komi, self.pos_len)
+        mcts = MCTS(self.ev, komi, self.pos_len, **self.mcts_kwargs)
         root = mcts.prepare(board)
         last_report = time.monotonic()
         done = 0

@@ -140,10 +140,15 @@ def raw_to_eval(board: Board, raw, pos_len: int) -> dict:
 TWO_OVER_PI = 2.0 / math.pi
 
 
+SQRT2 = math.sqrt(2.0)
+
+
 class Node:
-    # W = sum of search *utility* (winloss + score) used for selection; Wsq = sum of utility^2
-    # (for LCB variance); Wwl / Wsc = win-loss value and score-lead sums, kept for reporting.
-    __slots__ = ("move", "P", "N", "W", "Wsq", "Wwl", "Wsc", "vloss", "board", "eval",
+    # W = sum of search *utility* (winloss + score) MC-accumulated; Wsq = sum of utility^2
+    # (for LCB variance); Wwl / Wsc = win-loss value and score-lead sums (reporting). V is the
+    # node's recomputed value in its own perspective, used for in-tree selection: it equals the
+    # MC mean q() when value-weighting/subtree-bias are off, and incorporates them when on.
+    __slots__ = ("move", "P", "N", "W", "Wsq", "Wwl", "Wsc", "V", "vloss", "board", "eval",
                  "children", "expanded")
 
     def __init__(self, move, prior):
@@ -154,6 +159,7 @@ class Node:
         self.Wsq = 0.0          # sum of utility^2 (for LCB)
         self.Wwl = 0.0          # win-loss value sum (reporting)
         self.Wsc = 0.0          # score-lead sum (reporting)
+        self.V = 0.0            # recomputed node value (own perspective), for selection
         self.vloss = 0          # outstanding virtual losses
         self.board: Board | None = None
         self.eval = None
@@ -179,7 +185,8 @@ class MCTS:
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
                  dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.0,
                  cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0,
-                 fpu_parent_pow: float = 2.0):
+                 fpu_parent_pow: float = 2.0, value_weight_exp: float = 0.25,
+                 subtree_bias: float = 0.0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -189,6 +196,12 @@ class MCTS:
         self.fpu = fpu                  # FPU reduction = fpu * sqrt(visited policy mass)
         self.root_fpu = root_fpu        # smaller at root -> explore more candidate moves
         self.fpu_parent_pow = fpu_parent_pow  # blend parent-avg vs raw eval by mass^pow
+        # KataGo recursive value recompute (searchupdatehelpers.cpp). value_weight_exp re-weights
+        # children toward the above-average ones (z-score CDF^exp) when forming a node's value;
+        # subtree_bias pulls the node's own nn-eval toward its children's average. Both 0 => the
+        # recompute telescopes to the plain MC mean (q()), i.e. exactly the prior behaviour.
+        self.value_weight_exp = value_weight_exp
+        self.subtree_bias = subtree_bias
         self.vloss_weight = vloss_weight
         # Utility = winloss_factor*winloss + score utility, where the score utility is KataGo's
         # (2/pi)*atan(score/(scale*sqrtArea)) split into static + dynamic terms.
@@ -217,6 +230,33 @@ class MCTS:
             stdev = math.sqrt(max(0.0, var))
         return 1.0 + self.cpuct_stdev_scale * (stdev / prior - 1.0)
 
+    def _recompute_value(self, node: "Node") -> None:
+        """Set node.V = KataGo-style recomputed value (node's own perspective): a weight-1 prior
+        of its own nn eval plus its visited children's values weighted by their visit counts,
+        with optional value-weighting (upweight above-average children) and subtree-bias (pull
+        the self term toward the children average). With both factors 0 this is the MC mean."""
+        self_util = self._utility(node.eval, node.board.to_move)
+        visited = [c for c in node.children if c.N > 0]
+        if not visited:
+            node.V = self_util
+            return
+        us = [-c.V for c in visited]            # child values in this node's perspective
+        ws = [float(c.N) for c in visited]
+        sw = sum(ws)
+        if self.value_weight_exp > 0.0:
+            mean = sum(w * u for w, u in zip(ws, us)) / sw
+            rew = []
+            for u, w in zip(us, ws):
+                stdev = math.sqrt(1e-8 + 1.0 / (1.5 * math.sqrt(w)))
+                z = (u - mean) / stdev
+                p = 0.5 * (1.0 + math.erf(z / SQRT2)) + 1e-4
+                rew.append(w * p ** self.value_weight_exp)
+            ws = rew
+            sw = sum(ws)
+        children_avg = sum(w * u for w, u in zip(ws, us)) / sw
+        self_corr = self_util + self.subtree_bias * (children_avg - self_util)
+        node.V = (self_corr + sw * children_avg) / (1.0 + sw)
+
     def _utility(self, ev: dict, mover: int) -> float:
         return self.winloss_factor * ev["v"] + self._score_utility(ev["score"], mover)
 
@@ -244,6 +284,7 @@ class MCTS:
         self.score_center = root.eval["score"] if board.to_move == BLACK else -root.eval["score"]
         root.children = [Node(mv, p) for mv, p in root.eval["policy"].items()]
         root.expanded = True
+        self._recompute_value(root)
         return root
 
     def _select(self, node: Node, is_root: bool = False) -> Node:
@@ -253,16 +294,12 @@ class MCTS:
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
         cpuct *= self._cpuct_stdev_factor(node)
-        # FPU base = parent's running visit-averaged utility (KataGo's fpuUseParentAverage),
-        # falling back to the raw net eval before the node has any backed-up visits. The
-        # running average tracks the true node value as search refines it; the raw eval is a
-        # one-shot estimate that's often over-optimistic at low visits.
         # FPU value for unvisited children (KataGo searchexplorehelpers.cpp): the base blends
-        # the node's running utility average with its raw net eval, weighted by how much policy
-        # mass has already been visited (mass^pow), then a mass-scaled reduction is applied so
+        # the node's recomputed value with its raw net eval, weighted by how much policy mass
+        # has already been visited (mass^pow), then a mass-scaled reduction is applied so
         # unvisited moves look progressively worse as the good ones get explored.
         raw_v = self._utility(node.eval, node.board.to_move)
-        parent_avg = node.q() if node.N > 0 else raw_v
+        parent_avg = node.V if node.N > 0 else raw_v
         visited_mass = sum(ch.P for ch in node.children if ch.N + ch.vloss > 0)
         avg_w = min(1.0, visited_mass ** self.fpu_parent_pow)
         parent_v = avg_w * parent_avg + (1.0 - avg_w) * raw_v
@@ -272,9 +309,9 @@ class MCTS:
         for ch in node.children:
             neff = ch.N + ch.vloss
             if neff > 0:
-                # Virtual loss = a pretend loss for the *selecting* player, i.e. a pretend win
-                # in the child's own (opponent's) perspective, so the child looks worse to us.
-                q = -((ch.W + self.vloss_weight * ch.vloss) / neff)
+                # Child value (recomputed) negated to our perspective, with virtual loss = a
+                # pretend loss for the selecting player so the same leaf isn't picked twice.
+                q = -((ch.V * ch.N + self.vloss_weight * ch.vloss) / neff)
             else:
                 q = parent_v - fpu
             u = cpuct * ch.P * sqrt_n / (1 + neff)
@@ -333,6 +370,12 @@ class MCTS:
                 n.Wsq += util * util       # perspective-independent (sign^2 = 1)
                 n.Wwl += sign * wl
                 n.Wsc += sign * sc
+
+        # Recompute node values bottom-up (leaf -> root) so each parent sees its children's
+        # updated values. Done after all MC updates so visit counts are final this step.
+        for path in paths:
+            for n in reversed(path):
+                self._recompute_value(n)
         return len(paths)
 
     def run(self, root_board: Board, visits: int, batch_size: int = 16) -> Node:
