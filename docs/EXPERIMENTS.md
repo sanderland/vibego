@@ -119,28 +119,45 @@ Goal: our MCTS driving KataGo's b6c96 net should match KataGo's own engine at eq
 Measured with `scripts/vs.py --games N` (b18 judge) and tuned with the low-noise per-move
 tool `scripts/move_eval.py`. Proxy: `run_engine -proxy "<katago>"` (`nanogo/engine/proxy.py`).
 
-8 games @ 48 visits, mean judge scoreLead from our side (negative = we trail KataGo):
+Full-game variance is huge (per-game sd ~20–42), so the **primary instrument is
+`move_eval.py`** (points conceded per move on fixed b40 positions, both colors), with full
+games only for confirmation. The "game gap" column below is mean judge scoreLead from our
+side (negative = we trail KataGo), 8–16 games @ 48 visits.
 
-| change | gap | note |
-|--------|-----|------|
-| win-rate-only Q (start) | ~−108 ± 31 | huge variance, blunder games |
-| + score in utility + pass guard | ~−51 ± 9 | the big win; variance collapses |
-| + LCB lowered 5→1 (KataGo's 5 is tuned for high visits) | ~−42 ± 9 | |
-| + cpuctUtilityStdevScale 0.85 | ~−48 ± 7 | neutral/worse at 48 visits → defaulted off |
+| change | move_eval (pts/move conceded) | game gap | note |
+|--------|-------------------------------|----------|------|
+| win-rate-only Q (start) | — | ~−108 (lucky low-var sample) | huge variance, blunder games |
+| + score in utility + pass guard + variance-LCB | ~5.2 (n=24) | ~−83 ± 7 | the big algorithmic win |
+| + FPU base = parent-avg blend (KataGo `fpuParentWeightByVisitedPolicy`) | ~3.7 (n=24) | **−55 ± 5** | over-optimistic raw-eval base was hurting |
+| + leaf-batch capped ∝ visits (~1/8) | **~3.2 (n=40)** | **−54 ± 8** | synchronous virtual-loss batch was too "blind" at low visits |
 
-All search params/formulas stolen from KataGo (`searchparams.cpp` / `searchhelpers.cpp`):
-score utility `(2/π)atan(score/(scale·√area))` static+dynamic with a recentScoreCenter, log-cpuct,
-mass-scaled FPU (reverted — hurt at low visits), variance-LCB, cpuctUtilityStdevScale (off).
+All formulas stolen from KataGo (`searchparams.cpp` / `searchexplorehelpers.cpp` /
+`searchupdatehelpers.cpp`). The KataGo we benchmark against runs the analysis-mode **parse
+defaults** (the cfg comments them out): `subtreeValueBiasFactor=0.45`,
+`fpuParentWeightByVisitedPolicy=true` (pow 2), `valueWeightExponent=0.25`,
+`cpuctUtilityStdevScale=0.85`. We now match the FPU blend exactly. `cpuctUtilityStdevScale=0.85`
+re-tested with move_eval (n=40): a **net wash** (Black 5.1→4.2, White 3.1→4.1) → kept off.
 Also fixed a real bug: under tromp-taylor KataGo's policy includes suicide moves our board
 rejects → search crash → pass fallback.
 
-**Findings:** deficit cut ~108 → ~42 (≈60%). Our search is internally **correct** (engine vs
-itself is balanced, −2.8 ± 4.6 — no perspective bug). The gap doesn't shrink with visits
-(48 vs 128 ≈ same), so it's genuine per-visit search quality, not a low-visit artifact. We lose
-~2× more as White — *game dynamics* (weaker search on the responding side vs KataGo's strong
-opening), not a bug. Remaining param tweaks are within measurement noise. Closing the last ~42
-to true parity would need KataGo's heavier machinery (subtree value bias, uncertainty-weighted
-value averaging) — large effort, diminishing/uncertain returns for a minimal Python MCTS.
+**Two mechanisms we deliberately did *not* port** (they need replacing our flat
+Monte-Carlo backup with KataGo's recursive node-stats recompute — a large complexity add
+against this project's minimal mandate, for uncertain gain at 48 visits):
+- **subtreeValueBias** (0.45): corrects each leaf eval toward its subtree average, *shared across
+  repeated local move-patterns*. But our flat-MC backup already propagates each child's full
+  subtree average to the parent (W sums all leaf utilities up every path) — i.e. we already use
+  subtree values at weight 1.0, vs KataGo's partial 0.45 — and the cross-node pattern-sharing
+  needs transpositions that barely occur in a 48-visit tree.
+- **valueWeightExponent** (0.25) / noise-pruning: re-weights children toward the better ones
+  (z-score CDF) when recomputing a parent's value, instead of a visit-weighted mean.
+
+**Findings:** deficit cut ~−83 → ~−54 this pass (the honest pre-pass number is −83, not the
+earlier lucky −42 single-sample). Our search is internally **correct** (engine vs itself is
+balanced, −2.8 ± 4.6 — no perspective bug). The gap doesn't shrink with visits (48 vs 128 ≈
+same), so it's genuine per-visit search quality. The remaining gap to parity is concentrated
+in KataGo's recursive value-recompute machinery above — a real architecture-vs-simplicity
+fork. A proper Elo arena (sd ~40/game means 8 games can't resolve sub-20-pt changes) is the
+prerequisite for tuning the last stretch.
 
 ## Open items / next
 
