@@ -173,8 +173,8 @@ class Node:
 class MCTS:
     # Defaults stolen from KataGo (cpp/search/searchparams.cpp recommended preset).
     def __init__(self, evaluator: NNEvaluator, komi: float, pos_len: int,
-                 c_puct: float = 1.0, fpu: float = 0.2, vloss_weight: float = 1.0,
-                 c_puct_log: float = 0.45, c_puct_base: float = 500.0,
+                 c_puct: float = 1.0, fpu: float = 0.2, root_fpu: float = 0.1,
+                 vloss_weight: float = 1.0, c_puct_log: float = 0.45, c_puct_base: float = 500.0,
                  winloss_factor: float = 1.0, static_score_factor: float = 0.1,
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
                  dynamic_score_scale: float = 0.75):
@@ -184,7 +184,8 @@ class MCTS:
         self.c_puct = c_puct
         self.c_puct_log = c_puct_log    # cpuct grows ~log(visits), KataGo-style
         self.c_puct_base = c_puct_base
-        self.fpu = fpu
+        self.fpu = fpu                  # FPU reduction = fpu * sqrt(visited policy mass)
+        self.root_fpu = root_fpu        # smaller at root -> explore more candidate moves
         self.vloss_weight = vloss_weight
         # Utility = winloss_factor*winloss + score utility, where the score utility is KataGo's
         # (2/pi)*atan(score/(scale*sqrtArea)) split into static + dynamic terms.
@@ -225,13 +226,17 @@ class MCTS:
         root.expanded = True
         return root
 
-    def _select(self, node: Node) -> Node:
+    def _select(self, node: Node, is_root: bool = False) -> Node:
         # Effective stats include virtual loss (N+vloss visits, each vloss counted as a loss).
         parent_neff = node.N + node.vloss
         sqrt_n = math.sqrt(parent_neff + 1)
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
         parent_v = self._utility(node.eval, node.board.to_move)
+        # FPU: unvisited children get parent value minus a reduction that grows with the policy
+        # mass already explored (KataGo: fpuReductionMax * sqrt(policyProbMassVisited)).
+        mass_visited = sum(ch.P for ch in node.children if ch.N + ch.vloss > 0)
+        fpu = (self.root_fpu if is_root else self.fpu) * math.sqrt(mass_visited)
         best, best_score = None, -1e18
         for ch in node.children:
             neff = ch.N + ch.vloss
@@ -240,7 +245,7 @@ class MCTS:
                 # in the child's own (opponent's) perspective, so the child looks worse to us.
                 q = -((ch.W + self.vloss_weight * ch.vloss) / neff)
             else:
-                q = parent_v - self.fpu
+                q = parent_v - fpu
             u = cpuct * ch.P * sqrt_n / (1 + neff)
             s = q + u
             if s > best_score:
@@ -254,7 +259,7 @@ class MCTS:
             path = [root]
             node = root
             while node.expanded and node.children:
-                node = self._select(node)
+                node = self._select(node, is_root=(node is root))
                 path.append(node)
                 if not node.expanded:
                     break
