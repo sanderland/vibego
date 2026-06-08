@@ -46,9 +46,12 @@ class KataGoEvaluator:
             self._buf[r.get("id")] = r
 
     def _query(self, board, komi, qid):
+        # Force BLACK-perspective reporting so _parse can deterministically convert to the
+        # side-to-move convention our search uses (regardless of the engine's config default).
         q = {"id": qid, "rules": "tromp-taylor", "komi": round(komi * 2) / 2,
              "boardXSize": board.x_size, "boardYSize": board.y_size,
-             "maxVisits": self.visits, "includePolicy": True, "includeOwnership": True}
+             "maxVisits": self.visits, "includePolicy": True, "includeOwnership": True,
+             "overrideSettings": {"reportAnalysisWinratesAs": "BLACK"}}
         if board.move_history:
             # Built by replaying from empty (our self-play): send the moves so the teacher
             # recomputes exact features (ko, last-N moves, ladder history).
@@ -86,12 +89,19 @@ class KataGoEvaluator:
         s += pp
         if s > 0:
             policy = {k: v / s for k, v in policy.items()}
+        # KataGo reports winrate/scoreLead/ownership from BLACK's perspective (forced above);
+        # our search wants everything from the side-to-move's perspective, so flip when White
+        # is to move. (This was the bug: feeding Black-perspective values to a side-to-move
+        # search sign-flipped the value at every White-to-move node — half the tree.)
+        persp = 1.0 if board.to_move == BLACK else -1.0
         own = np.zeros((pos_len, pos_len), dtype=np.float32)
         for i, o in enumerate(r["ownership"]):
-            own[i // xs, i % xs] = o
-        wr = float(r["rootInfo"]["winrate"])
-        return {"v": 2.0 * wr - 1.0, "winrate": wr,
-                "score": float(r["rootInfo"]["scoreLead"]), "policy": policy, "ownership": own}
+            own[i // xs, i % xs] = persp * o
+        wr_black = float(r["rootInfo"]["winrate"])
+        wr = wr_black if persp > 0 else 1.0 - wr_black
+        score = persp * float(r["rootInfo"]["scoreLead"])
+        return {"v": 2.0 * wr - 1.0, "winrate": wr, "score": score,
+                "policy": policy, "ownership": own}
 
     def evaluate_boards(self, boards, komi, pos_len):
         ids = []
