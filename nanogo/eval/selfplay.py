@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 
-from ..engine.search import MCTS, NNEvaluator
+from ..engine.search import MCTS, NNEvaluator, lcb
 from ..go.board import BLACK, EMPTY, PASS, WHITE, Board, xy_to_gtp
 
 
@@ -43,20 +43,20 @@ def area_score(board: Board, komi: float) -> float:
 
 
 def _choose(root, move_idx, opening_moves, temperature, rng):
-    visited = [(c.move, c.N) for c in root.children if c.N > 0]
-    if not visited:
+    children = [c for c in root.children if c.N > 0]
+    if not children:
         return PASS
-    if move_idx < opening_moves and temperature > 0:
-        weights = [n ** (1.0 / temperature) for _, n in visited]
+    if move_idx < opening_moves and temperature > 0:  # opening: sample ~ visit counts
+        weights = [c.N ** (1.0 / temperature) for c in children]
         total = sum(weights)
         r = rng.random() * total
         acc = 0.0
-        for (mv, _), w in zip(visited, weights):
+        for c, w in zip(children, weights):
             acc += w
             if acc >= r:
-                return mv
-        return visited[-1][0]
-    return max(visited, key=lambda mn: mn[1])[0]
+                return c.move
+        return children[-1].move
+    return max(children, key=lcb).move  # otherwise pick the LCB-best move
 
 
 def play_game(eval_black: NNEvaluator, eval_white: NNEvaluator, pos_len: int,

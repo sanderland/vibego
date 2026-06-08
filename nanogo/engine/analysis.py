@@ -22,7 +22,7 @@ import threading
 import time
 
 from ..go.board import BLACK, WHITE, Board, PASS, gtp_to_xy, opp, xy_to_gtp
-from .search import MCTS, NNEvaluator
+from .search import MCTS, NNEvaluator, adaptive_batch, lcb
 
 
 def _player(s: str) -> int:
@@ -95,7 +95,8 @@ class AnalysisEngine:
             "currentPlayer": _player_str(mover),
         }
 
-        visited = sorted((c for c in root.children if c.N > 0), key=lambda c: c.N, reverse=True)
+        # Order by LCB (robust value), not raw visit count — what gets played is moveInfos[0].
+        visited = sorted((c for c in root.children if c.N > 0), key=lcb, reverse=True)
         move_infos = []
         for order, ch in enumerate(visited):
             mv_wl = -ch.winloss()      # child stats are in the opponent's perspective
@@ -173,7 +174,7 @@ class AnalysisEngine:
         while done < visits:
             if self._is_terminated(qid, start_epoch):
                 return  # discarded; KaTrain doesn't want stale results
-            done += mcts.step(root, min(self.leaf_batch, visits - done))
+            done += mcts.step(root, adaptive_batch(self.leaf_batch, done, visits))
             if report_every and (time.monotonic() - last_report) >= float(report_every):
                 self._emit(self._build_result(q, turn, root, during_search=True))
                 last_report = time.monotonic()

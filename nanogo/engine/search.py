@@ -168,12 +168,15 @@ class Node:
 
 class MCTS:
     def __init__(self, evaluator: NNEvaluator, komi: float, pos_len: int,
-                 c_puct: float = 1.5, fpu: float = 0.25, vloss_weight: float = 1.0,
-                 score_weight: float = 0.5, score_scale: float = 30.0):
+                 c_puct: float = 1.0, fpu: float = 0.25, vloss_weight: float = 1.0,
+                 score_weight: float = 0.5, score_scale: float = 30.0,
+                 c_puct_log: float = 0.45, c_puct_base: float = 500.0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
         self.c_puct = c_puct
+        self.c_puct_log = c_puct_log    # cpuct grows ~log(visits), KataGo-style
+        self.c_puct_base = c_puct_base
         self.fpu = fpu
         self.vloss_weight = vloss_weight
         # Search utility = win-loss + score_weight * tanh(scoreLead / score_scale), so the
@@ -202,6 +205,8 @@ class MCTS:
         # Effective stats include virtual loss (N+vloss visits, each vloss counted as a loss).
         parent_neff = node.N + node.vloss
         sqrt_n = math.sqrt(parent_neff + 1)
+        cpuct = self.c_puct + self.c_puct_log * math.log(
+            (parent_neff + self.c_puct_base) / self.c_puct_base)
         parent_v = self._utility(node.eval)
         best, best_score = None, -1e18
         for ch in node.children:
@@ -212,7 +217,7 @@ class MCTS:
                 q = -((ch.W + self.vloss_weight * ch.vloss) / neff)
             else:
                 q = parent_v - self.fpu
-            u = self.c_puct * ch.P * sqrt_n / (1 + neff)
+            u = cpuct * ch.P * sqrt_n / (1 + neff)
             s = q + u
             if s > best_score:
                 best_score, best = s, ch
@@ -273,5 +278,19 @@ class MCTS:
         root = self.prepare(root_board)
         done = 0
         while done < visits:
-            done += self.step(root, min(batch_size, visits - done))
+            done += self.step(root, adaptive_batch(batch_size, done, visits))
         return root
+
+
+def adaptive_batch(batch_size: int, done: int, visits: int) -> int:
+    """Don't collect more leaves than visits already done, so the early tree gets sequential
+    value feedback instead of expanding a batch of leaves blind (which is weak at low visits)."""
+    return max(1, min(batch_size, visits - done, max(1, done)))
+
+
+def lcb(child: "Node", z: float = 1.0) -> float:
+    """Lower-confidence-bound on the move's value from the parent's perspective (utility mean
+    minus a visit-count uncertainty penalty). Robust move selection vs raw max-visits."""
+    if child.N <= 0:
+        return -1e18
+    return -child.q() - z / math.sqrt(child.N)

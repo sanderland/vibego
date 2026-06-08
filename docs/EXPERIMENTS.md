@@ -95,14 +95,21 @@ Two tools decompose the gap (both sidestep noisy full games):
 
 **Conclusion: the in-game gap to b6c96 is dominated by SEARCH, not the net.**
 
-**Fix applied:** the search utility now includes score — `utility = winloss + score_weight *
-tanh(scoreLead / score_scale)` (win-loss and score are also tracked separately for reporting).
-Re-running the proxy diagnostic, our search's deficit shrank (−44→−38, −165→−128) but it still
-trails KataGo's — score-in-Q is necessary but not sufficient. Remaining search work (impact
-order): **cpuct that scales with visits**, **LCB / playSelectionValue move selection** (we pick
-raw max-visits), and **leaf-batch coarseness at low visit counts** (batch 16 over 48 visits =
-few sequential waves). These need their own pass; single-game noise also needs an arena to
-measure precisely.
+**Search pass (proxy diagnostic, our-search+b6c96 vs KataGo-b6c96 own search, same net, 48 visits):**
+
+| search | as B | as W | avg | note |
+|--------|------|------|-----|------|
+| win-rate-only Q (original) | −44 | −165 | ~−104 | wild color asymmetry = instability |
+| + score in utility | −38 | −128 | ~−83 | helps, not enough |
+| + cpuct-scaling + LCB selection + adaptive leaf-batch | −63 | −61 | **~−62** | **deficit ~halved, asymmetry gone** |
+
+Changes: utility = `winloss + score_weight*tanh(scoreLead/score_scale)`; cpuct grows with
+`log(visits)` (KataGo-style); move selection by **LCB** of utility (not raw max-visits);
+**adaptive leaf-batch** (sequential early visits so the tree gets value feedback instead of
+expanding a blind batch). The deficit fell ~104→~62 and the two games are now consistent
+(−63/−61) — the earlier blowouts were search instability. Still behind KataGo (params untuned;
+further refinements remain), but much closer and steadier. Precise gains still want a multi-game
+arena over single games.
 
 ## Open items / next
 
