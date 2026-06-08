@@ -21,7 +21,7 @@ import threading
 import numpy as np
 import torch
 
-from ..go.board import PASS, Board
+from ..go.board import BLACK, PASS, Board
 from ..go.features import encode_board
 
 
@@ -193,16 +193,20 @@ class MCTS:
         self.dynamic_score_factor = dynamic_score_factor
         self.static_score_scale = static_score_scale
         self.dynamic_score_scale = dynamic_score_scale
-        self.sqrt_area = float(pos_len)  # updated to the real board in prepare()
+        self.sqrt_area = float(pos_len)   # updated to the real board in prepare()
+        self.score_center = 0.0           # KataGo's recentScoreCenter (Black perspective)
 
-    def _utility(self, ev: dict) -> float:
-        return self.winloss_factor * ev["v"] + self._score_utility(ev["score"])
+    def _utility(self, ev: dict, mover: int) -> float:
+        return self.winloss_factor * ev["v"] + self._score_utility(ev["score"], mover)
 
-    def _score_utility(self, score: float) -> float:
+    def _score_utility(self, score: float, mover: int) -> float:
+        # score is from `mover`'s perspective; the dynamic term is centered on the current
+        # expected score (recentScoreCenter), oriented into the mover's perspective.
         a = self.sqrt_area
+        center = self.score_center if mover == BLACK else -self.score_center
         return TWO_OVER_PI * (
             self.static_score_factor * math.atan(score / (self.static_score_scale * a))
-            + self.dynamic_score_factor * math.atan(score / (self.dynamic_score_scale * a)))
+            + self.dynamic_score_factor * math.atan((score - center) / (self.dynamic_score_scale * a)))
 
     def _eval_boards(self, boards: list[Board]) -> list[dict]:
         # The evaluator owns board -> eval, so alternative evaluators (e.g. a KataGo proxy that
@@ -215,6 +219,8 @@ class MCTS:
         board = root_board.copy()
         root.eval = self._eval_boards([board])[0]
         root.board = board
+        # Center the dynamic score term on the current expected score (Black perspective).
+        self.score_center = root.eval["score"] if board.to_move == BLACK else -root.eval["score"]
         root.children = [Node(mv, p) for mv, p in root.eval["policy"].items()]
         root.expanded = True
         return root
@@ -225,7 +231,7 @@ class MCTS:
         sqrt_n = math.sqrt(parent_neff + 1)
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
-        parent_v = self._utility(node.eval)
+        parent_v = self._utility(node.eval, node.board.to_move)
         best, best_score = None, -1e18
         for ch in node.children:
             neff = ch.N + ch.vloss
@@ -279,7 +285,7 @@ class MCTS:
         # win-loss and score separately (for reporting), with the per-node perspective sign.
         for path in paths:
             leaf = path[-1]
-            util = self._utility(leaf.eval)
+            util = self._utility(leaf.eval, leaf.board.to_move)
             wl = leaf.eval["v"]
             sc = leaf.eval["score"]
             mover = leaf.board.to_move
@@ -325,5 +331,11 @@ def rank_children(children, lcb_stdevs: float = 5.0, min_visit_prop: float = 0.1
     if not visited:
         return []
     thresh = min_visit_prop * max(c.N for c in visited)
-    return sorted(visited, key=lambda c: (1, lcb(c, lcb_stdevs)) if c.N >= thresh
-                  else (0, c.N), reverse=True)
+
+    def key(c):
+        if c.move is PASS:
+            return (-1, lcb(c, lcb_stdevs))  # never prefer PASS over a real move (area scoring:
+            #                                  a harmless move never loses points), unless forced
+        return (1, lcb(c, lcb_stdevs)) if c.N >= thresh else (0, c.N)
+
+    return sorted(visited, key=key, reverse=True)

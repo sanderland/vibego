@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from nanogo.engine.search import MCTS, NNEvaluator
-from nanogo.go.board import PASS, Board
+from nanogo.go.board import BLACK, PASS, Board
 from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
 
 
@@ -31,11 +31,11 @@ class _FakeEval:
 def test_score_enters_search_utility():
     ev = {"v": 0.2, "score": 15.0}
     m = MCTS(None, komi=7.5, pos_len=19)  # KataGo defaults: static 0.1@2.0, dynamic 0.3@0.75
-    m.sqrt_area = 19.0
+    m.sqrt_area = 19.0  # score_center defaults to 0 here
     expected = (2 / math.pi) * (0.1 * math.atan(15 / (2.0 * 19)) + 0.3 * math.atan(15 / (0.75 * 19)))
-    assert abs(m._utility(ev) - (0.2 + expected)) < 1e-9
+    assert abs(m._utility(ev, BLACK) - (0.2 + expected)) < 1e-9
     m0 = MCTS(None, komi=7.5, pos_len=19, static_score_factor=0.0, dynamic_score_factor=0.0)
-    assert m0._utility(ev) == 0.2  # score off -> win-loss only
+    assert m0._utility(ev, BLACK) == 0.2  # score off -> win-loss only
 
 
 def test_reporting_separates_winloss_and_score():
