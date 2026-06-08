@@ -22,9 +22,9 @@ export RELABEL_FILES=190000     # ~52 positions/file -> ~10M distilled positions
 export DATA_DAYS=6              # source archives to download (each ~2.5M positions / ~1.4 GB)
 export TRAIN_STEPS=150000
 export ARCH=b6c96-gpool         # or b6c128nbt once the nbt block lands
-# MATCH this to the pod's CUDA/TensorRT (see github.com/lightvector/KataGo/releases):
-export KATAGO_URL=https://github.com/lightvector/KataGo/releases/download/v1.16.4/katago-v1.16.4-trt10.6.0-cuda12.6-linux-x64.zip
 curl -sSL https://raw.githubusercontent.com/sanderland/nanogo/dev/scripts/runpod_bootstrap.sh | bash
+# KataGo install: run `bash scripts/setup_katago.sh` (CUDA+cuDNN build, handles the pod gotchas;
+# the trt10.6.0-cuda12.6 release asset 404s). It emits katago_bin/katago.sh as the engine.
 ```
 
 Smoke-test the orchestration first (CPU, no GPU/KataGo): `SMOKE=1 bash scripts/runpod_bootstrap.sh`.
@@ -36,12 +36,13 @@ git clone -b dev https://github.com/sanderland/nanogo.git && cd nanogo
 curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
 uv sync --extra dev && uv run pytest -q          # katago-submodule tests skip; rest must pass
 
-# KataGo + b18 teacher
-curl -L "$KATAGO_URL" -o kg.zip && unzip kg.zip -d katago_bin
-KATAGO=$(find katago_bin -name katago -type f); chmod +x "$KATAGO"; "$KATAGO" version
+# KataGo + b18 teacher.  Use scripts/setup_katago.sh — it handles the gotchas on a clean CUDA
+# pod (the trt10.6.0-cuda12.6 release asset 404s; pip TensorRT 10.2 is broken; no FUSE for the
+# AppImage; cuDNN not preinstalled). It downloads the b18 teacher and emits a wrapper:
+bash scripts/setup_katago.sh
+KATAGO="$PWD/katago_bin/katago.sh"          # use this as the teacher/opponent/judge engine
 printf 'numAnalysisThreads=12\nnnMaxBatchSize=256\n' > analysis.cfg
-mkdir -p models
-curl -L https://media.katagotraining.org/uploaded/networks/models/kata1/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz -o models/b18.bin.gz
+ls models/b18.bin.gz                          # downloaded by setup_katago.sh
 
 # source games -> relabel with b18 (visits=1 = raw policy; strong enough to distill)
 uv run python scripts/download_data.py --n 6 --from 2021-06-01

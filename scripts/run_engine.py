@@ -35,6 +35,7 @@ def parse_args():
     p.add_argument("-human-model", default=None)        # ignored
     p.add_argument("-device", default=None)
     p.add_argument("-default-visits", type=int, default=100)
+    p.add_argument("-leaf-batch", type=int, default=16, help="leaves per search step (1=sequential)")
     p.add_argument("-pos-len", type=int, default=19)
     p.add_argument("-proxy", default=None,
                    help="run OUR search on an external engine's net (KataGo cmd) — search diagnostic")
@@ -68,7 +69,8 @@ def main():
         pos_len = config.pos_len
         sys.stderr.write(f"nanogo: loaded {args.model} ({config}) on {device}\n")
     sys.stderr.flush()
-    engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits)
+    engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,
+                            leaf_batch=args.leaf_batch)
     engine.run()
 
 
