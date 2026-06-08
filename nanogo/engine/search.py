@@ -325,7 +325,7 @@ def lcb(child: "Node", lcb_stdevs: float = 5.0) -> float:
     return mean - lcb_stdevs * math.sqrt(var / child.N)
 
 
-def rank_children(children, lcb_stdevs: float = 5.0, min_visit_prop: float = 0.15):
+def rank_children(children, lcb_stdevs: float = 1.0, min_visit_prop: float = 0.15):
     """Order visited children for move selection (best first): among those with enough visits,
     rank by LCB; the rest fall below, ranked by raw visits — so a barely-visited move with a
     flukey LCB can't outrank a well-searched one. (KataGo's minVisitPropForLCB.)"""

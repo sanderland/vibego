@@ -35,11 +35,12 @@ def _player_str(p: int) -> str:
 
 class AnalysisEngine:
     def __init__(self, evaluator: NNEvaluator, pos_len: int,
-                 default_visits: int = 100, leaf_batch: int = 16):
+                 default_visits: int = 100, leaf_batch: int = 16, lcb_stdevs: float = 1.0):
         self.ev = evaluator
         self.pos_len = pos_len
         self.default_visits = default_visits
         self.leaf_batch = leaf_batch  # leaves collected per search step (virtual loss)
+        self.lcb_stdevs = lcb_stdevs  # move selection LCB width (0 = pure mean-value)
         self._terminated: set[str] = set()
         self._term_epoch = 0  # incremented by terminate_all; a query started earlier is dead
         self._queue: queue.Queue = queue.Queue()
@@ -96,7 +97,7 @@ class AnalysisEngine:
         }
 
         # Order by LCB (robust value), not raw visit count — what gets played is moveInfos[0].
-        visited = rank_children(root.children)
+        visited = rank_children(root.children, self.lcb_stdevs)
         move_infos = []
         for order, ch in enumerate(visited):
             mv_wl = -ch.winloss()      # child stats are in the opponent's perspective
