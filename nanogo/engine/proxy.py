@@ -46,26 +46,39 @@ class KataGoEvaluator:
             self._buf[r.get("id")] = r
 
     def _query(self, board, komi, qid):
-        # Send the move history (not just stones) so the teacher recomputes exact features
-        # (ko, last-N moves, ladder history). Valid when the board was built by replaying from
-        # empty (our self-play / no setup stones), which is the case for the search diagnostic.
-        moves = []
-        for player, mv in board.move_history:
-            color = "B" if player == BLACK else "W"
-            moves.append([color, "pass" if mv is PASS else xy_to_gtp(mv, board.y_size)])
-        first = "B" if (board.move_history[0][0] if board.move_history else board.to_move) == BLACK else "W"
-        return {"id": qid, "rules": "tromp-taylor", "komi": round(komi * 2) / 2,
-                "boardXSize": board.x_size, "boardYSize": board.y_size,
-                "initialStones": [], "initialPlayer": first, "moves": moves,
-                "analyzeTurns": [len(moves)], "maxVisits": self.visits,
-                "includePolicy": True, "includeOwnership": True}
+        q = {"id": qid, "rules": "tromp-taylor", "komi": round(komi * 2) / 2,
+             "boardXSize": board.x_size, "boardYSize": board.y_size,
+             "maxVisits": self.visits, "includePolicy": True, "includeOwnership": True}
+        if board.move_history:
+            # Built by replaying from empty (our self-play): send the moves so the teacher
+            # recomputes exact features (ko, last-N moves, ladder history).
+            moves = [["B" if p == BLACK else "W", "pass" if mv is PASS else xy_to_gtp(mv, board.y_size)]
+                     for p, mv in board.move_history]
+            q.update(initialStones=[], moves=moves, analyzeTurns=[len(moves)],
+                     initialPlayer="B" if board.move_history[0][0] == BLACK else "W")
+        else:
+            # No history (e.g. positions given as stones): send the current stones directly.
+            stones = []
+            for y in range(board.y_size):
+                for x in range(board.x_size):
+                    v = board.grid[y, x]
+                    if v == BLACK:
+                        stones.append(["B", xy_to_gtp((x, y), board.y_size)])
+                    elif v == WHITE:
+                        stones.append(["W", xy_to_gtp((x, y), board.y_size)])
+            q.update(initialStones=stones, moves=[], analyzeTurns=[0],
+                     initialPlayer="B" if board.to_move == BLACK else "W")
+        return q
 
     def _parse(self, r, board, pos_len):
         xs = board.x_size
         pol = r["policy"]
+        # Only keep moves legal on OUR board: KataGo under tromp-taylor allows suicide / has
+        # different superko, which our board rejects — expanding such a move would crash search.
+        legal = set(board.legal_moves(board.to_move))
         policy, s = {}, 0.0
         for i, p in enumerate(pol[:-1]):
-            if p >= 0:
+            if p >= 0 and (i % xs, i // xs) in legal:
                 policy[(i % xs, i // xs)] = p
                 s += p
         pp = max(0.0, pol[-1])
