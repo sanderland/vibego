@@ -19,9 +19,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import shlex
 import subprocess
 import sys
+import threading
+from collections import deque
 
 import numpy as np
 
@@ -32,10 +35,36 @@ from nanogo.net import data as ndata
 
 
 class TeacherEngine:
+    """KataGo analysis-protocol engine. A background thread drains stdout into a queue so we
+    can keep many queries in flight (relabel_stream) without the classic pipe deadlock — if we
+    sent thousands of queries while never reading, KataGo would block writing responses and then
+    stop reading our stdin. recv(qid) (specific id, used by relabel_file/policy_eval) and
+    recv_any() (next-to-arrive, used by relabel_stream) both pull from that one queue."""
+
     def __init__(self, command: str):
         self.proc = subprocess.Popen(shlex.split(command), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        self._buf: dict = {}  # responses that arrived out of order, keyed by id
+        self._q: "queue.Queue" = queue.Queue()
+        self._buf: dict = {}  # responses pulled while waiting for a specific id (recv)
+        self._reader = threading.Thread(target=self._read, daemon=True)
+        self._reader.start()
+
+    def _read(self):
+        for line in self.proc.stdout:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if r.get("isDuringSearch"):
+                continue
+            self._q.put(r)
+        self._q.put(None)  # EOF sentinel
+
+    def _get(self) -> dict:
+        r = self._q.get()
+        if r is None:
+            raise RuntimeError("teacher engine closed")
+        return r
 
     def ask(self, query: dict) -> dict:
         self.send(query)
@@ -49,15 +78,16 @@ class TeacherEngine:
         if qid in self._buf:
             return self._buf.pop(qid)
         while True:
-            line = self.proc.stdout.readline()
-            if not line:
-                raise RuntimeError("teacher engine closed")
-            r = json.loads(line)
-            if r.get("isDuringSearch"):
-                continue
+            r = self._get()
             if r.get("id") == qid:
                 return r
             self._buf[r.get("id")] = r  # arrived out of order; stash for later
+
+    def recv_any(self) -> dict:
+        """Return the next response to arrive (any id). Drains stashed ones first."""
+        if self._buf:
+            return self._buf.popitem()[1]
+        return self._get()
 
     def close(self):
         try:
@@ -124,8 +154,11 @@ def relabel_file(path, out_path, teacher, pos_len, visits):
         q, xs, ys = _row_query(bin_nchw[i], global_nc[i], pos_len, 5, f"r{i}", visits)
         sizes[f"r{i}"] = (xs, ys)
         teacher.send(q)
-    for i in range(n):
-        r = teacher.recv(f"r{i}")
+    keep = []  # KataGo returns an error response (no "policy") for some reconstructed
+    for i in range(n):  # positions (e.g. illegal initialStones / terminal board); drop those.
+        r = teacher.recv(f"r{i}")  # must recv all n to stay in sync with the n sent queries
+        if "policy" not in r or "rootInfo" not in r:
+            continue
         xs, ys = sizes[f"r{i}"]
         p, v, s, o = _targets_from_response(r, xs, ys, pos_len)
         pol[i, 0] = p
@@ -133,9 +166,98 @@ def relabel_file(path, out_path, teacher, pos_len, visits):
         gt[i, 3] = s
         gt[i, 27] = 1.0  # ownership weight
         own[i, 0] = o
+        keep.append(i)
+    keep = np.array(keep, dtype=np.int64)
+    packed, global_nc = packed[keep], global_nc[keep]
+    pol, gt, own = pol[keep], gt[keep], own[keep]
+    return _write_npz(out_path, packed, global_nc, pol, gt, own)
+
+
+def _write_npz(out_path, packed, global_nc, pol, gt, own):
+    """Atomic write: temp-then-rename so a crash can't leave a truncated file the cache later
+    skips as 'done'. Write via a file HANDLE — np.savez_compressed appends '.npz' to a path arg,
+    which would break the rename."""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
-    np.savez_compressed(out_path, binaryInputNCHWPacked=packed, globalInputNC=global_nc,
-                        policyTargetsNCMove=pol, globalTargetsNC=gt, valueTargetsNCHW=own)
+    tmp = out_path + ".tmp"
+    with open(tmp, "wb") as fh:
+        np.savez_compressed(fh, binaryInputNCHWPacked=packed, globalInputNC=global_nc,
+                            policyTargetsNCMove=pol, globalTargetsNC=gt, valueTargetsNCHW=own)
+    os.replace(tmp, out_path)
+    return packed.shape[0]
+
+
+def relabel_stream(items, teacher, pos_len, visits, max_inflight=2048):
+    """Relabel many files with a large query window kept in flight, so the teacher's NN batch
+    stays full — relabeling one file at a time leaves the GPU ~idle between files (the dominant
+    cost at visits=1). Yields (out_path, n_kept) as each file's responses arrive and it's written.
+    items: list of (src_path, out_path)."""
+    loaded = {}   # idx -> per-file state (input planes + target arrays + pending count)
+    qmap = {}     # qid -> (idx, pos_i, xs, ys)
+    send_q = deque()
+    qid = 0
+    inflight = 0
+    cursor = 0
+
+    def load(idx):
+        src, _out = items[idx]
+        with np.load(src) as npz:
+            packed = npz["binaryInputNCHWPacked"]
+            global_nc = npz["globalInputNC"]
+        bn = np.unpackbits(packed, axis=2)[:, :, : pos_len * pos_len]
+        bn = bn.reshape(bn.shape[0], bn.shape[1], pos_len, pos_len)
+        n = bn.shape[0]
+        loaded[idx] = {
+            "out": items[idx][1], "packed": packed, "global_nc": global_nc, "bin": bn, "n": n,
+            "pol": np.zeros((n, 1, pos_len * pos_len + 1), dtype=np.float32),
+            "gt": np.zeros((n, 64), dtype=np.float32),
+            "own": np.zeros((n, 1, pos_len, pos_len), dtype=np.float32),
+            "keep": [], "pending": n,
+        }
+        for i in range(n):
+            send_q.append((idx, i))
+        return n
+
+    def finalize(idx):
+        st = loaded.pop(idx)
+        keep = np.array(st["keep"], dtype=np.int64)
+        _write_npz(st["out"], st["packed"][keep], st["global_nc"][keep],
+                   st["pol"][keep], st["gt"][keep], st["own"][keep])
+        return st["out"], len(keep)
+
+    while True:
+        while inflight + len(send_q) < max_inflight and cursor < len(items):
+            idx = cursor
+            cursor += 1
+            if load(idx) == 0:
+                yield finalize(idx)  # empty source -> empty output, done immediately
+        while inflight < max_inflight and send_q:
+            idx, i = send_q.popleft()
+            st = loaded[idx]
+            q, xs, ys = _row_query(st["bin"][i], st["global_nc"][i], pos_len, 5, f"q{qid}", visits)
+            qmap[f"q{qid}"] = (idx, i, xs, ys)
+            qid += 1
+            teacher.send(q)
+            inflight += 1
+        if inflight == 0 and not send_q and cursor >= len(items):
+            return
+        r = teacher.recv_any()
+        key = r.get("id")
+        if key not in qmap:
+            continue  # stray/global message not tied to an in-flight query; ignore
+        inflight -= 1
+        idx, i, xs, ys = qmap.pop(key)
+        st = loaded[idx]
+        if "policy" in r and "rootInfo" in r:  # else KataGo errored on this position -> drop it
+            p, v, s, o = _targets_from_response(r, xs, ys, pos_len)
+            st["pol"][i, 0] = p
+            st["gt"][i, 0:3] = v
+            st["gt"][i, 3] = s
+            st["gt"][i, 27] = 1.0
+            st["own"][i, 0] = o
+            st["keep"].append(i)
+        st["pending"] -= 1
+        if st["pending"] == 0:
+            yield finalize(idx)
 
 
 def main():
@@ -143,22 +265,58 @@ def main():
     p.add_argument("--src", default="data")
     p.add_argument("--out", default="distilled")
     p.add_argument("--teacher", required=True, help="teacher engine command (KataGo protocol)")
-    p.add_argument("--n-files", type=int, default=100)
+    p.add_argument("--n-files", type=int, default=None, help="cap on source files to consider")
+    p.add_argument("--max-pos", type=int, default=None,
+                   help="stop after ~this many newly-relabeled positions")
+    p.add_argument("--max-gb", type=float, default=None,
+                   help="stop when the output dir reaches ~this many GB (cached + new)")
     p.add_argument("--pos-len", type=int, default=19)
     p.add_argument("--visits", type=int, default=1, help="teacher visits (1 = raw policy)")
+    p.add_argument("--inflight", type=int, default=2048,
+                   help="teacher queries kept in flight; fills the NN batch (throughput knob)")
+    p.add_argument("--overwrite", action="store_true", help="re-relabel even if a cached output exists")
     args = p.parse_args()
 
-    files = ndata.list_npz(args.src)[: args.n_files]
+    # Resumable cache: each output is named after its source file (already a content hash), so the
+    # (src -> output) mapping is stable across runs; existing outputs are reused, not recomputed.
+    # NOTE: a teacher's targets are net-specific -> use a SEPARATE --out dir per teacher.
+    files = ndata.list_npz(args.src)
+    if args.n_files is not None:
+        files = files[: args.n_files]
+    os.makedirs(args.out, exist_ok=True)
+    # Bytes already on disk (cached outputs) count toward --max-gb; cheap stat, no npz loads.
+    cached_bytes = sum(e.stat().st_size for e in os.scandir(args.out) if e.name.endswith(".npz"))
+    items = [(f, os.path.join(args.out, os.path.basename(f))) for f in files]
+    items = [(f, o) for f, o in items if args.overwrite or not os.path.exists(o)]
+    cached = len(files) - len(items)
+    max_bytes = int(args.max_gb * 1e9) if args.max_gb is not None else None
+
+    print(f"{len(files)} src files: {cached} cached ({cached_bytes/1e9:.2f} GB), {len(items)} to do"
+          + (f"; target ~{args.max_gb} GB" if max_bytes else ""))
     teacher = TeacherEngine(args.teacher)
+    done = pos = new_bytes = 0
     try:
-        for k, f in enumerate(files):
-            out = os.path.join(args.out, f"distilled_{k:06d}.npz")
-            relabel_file(f, out, teacher, args.pos_len, args.visits)
-            if k % 50 == 0:
-                print(f"relabeled {k+1}/{len(files)}")
+        if max_bytes is not None and cached_bytes >= max_bytes:
+            print(f"already at {cached_bytes/1e9:.2f} GB >= target; nothing to do")
+        else:
+            for out_path, nk in relabel_stream(items, teacher, args.pos_len, args.visits, args.inflight):
+                done += 1
+                pos += nk
+                new_bytes += os.path.getsize(out_path)
+                if done % 50 == 0:
+                    print(f"{done} new + {cached} cached, ~{pos} pos, "
+                          f"{(cached_bytes + new_bytes)/1e9:.2f} GB", flush=True)
+                if max_bytes is not None and cached_bytes + new_bytes >= max_bytes:
+                    print(f"reached ~{args.max_gb} GB target")
+                    break
+                if args.max_pos is not None and pos >= args.max_pos:
+                    print(f"reached ~{args.max_pos} pos target")
+                    break
     finally:
         teacher.close()
-    print(f"done -> {args.out}/ ({len(ndata.list_npz(args.out))} files)")
+    print(f"done -> {args.out}/ : {done} new + {cached} cached = "
+          f"{len(ndata.list_npz(args.out))} files, ~{pos} new pos, "
+          f"{(cached_bytes + new_bytes)/1e9:.2f} GB total")
 
 
 if __name__ == "__main__":

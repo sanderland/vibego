@@ -89,6 +89,7 @@ data/
 models/
 katago_bin/
 katago_cuda/
+katago_cuda128/
 *.bin.gz
 *.npz
 *.npy
