@@ -233,10 +233,7 @@ class MCTS:
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
         parent_v = self._utility(node.eval, node.board.to_move)
-        # FPU: unvisited children get parent value minus a reduction that grows with the policy
-        # mass already explored (KataGo: fpuReductionMax * sqrt(policyProbMassVisited)).
-        mass_visited = sum(ch.P for ch in node.children if ch.N + ch.vloss > 0)
-        fpu = (self.root_fpu if is_root else self.fpu) * math.sqrt(mass_visited)
+        fpu = self.root_fpu if is_root else self.fpu
         best, best_score = None, -1e18
         for ch in node.children:
             neff = ch.N + ch.vloss
