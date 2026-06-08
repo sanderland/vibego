@@ -2,7 +2,7 @@
 
 How to scale up the b18 → nanogo distillation on a cloud GPU (e.g. RunPod). The student is
 tiny; the point of the GPU is **fast KataGo teacher inference** (relabeling millions of
-positions) and fast training. See `docs/EXPERIMENTS.md` for why distillation is the path.
+positions) and fast training. See `experiments/SUMMARY.md` for why distillation is the path.
 
 ## 0. Provision
 
