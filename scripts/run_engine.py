@@ -39,10 +39,6 @@ def parse_args():
     p.add_argument("-lcb-stdevs", type=float, default=1.0, help="move-selection LCB width (0=mean value)")
     p.add_argument("-cpuct", type=float, default=1.0, help="PUCT exploration constant")
     p.add_argument("-cpuct-log", type=float, default=0.45, help="cpuct growth ~ log((N+base)/base)")
-    p.add_argument("-value-weight-exp", type=float, default=0.25,
-                   help="KataGo valueWeightExponent: upweight above-avg children in node value")
-    p.add_argument("-subtree-bias", type=float, default=0.0,
-                   help="KataGo subtreeValueBiasFactor: pull node self-eval toward children avg")
     p.add_argument("-pos-len", type=int, default=19)
     p.add_argument("-proxy", default=None,
                    help="run OUR search on an external engine's net (KataGo cmd) — search diagnostic")
@@ -76,8 +72,7 @@ def main():
         pos_len = config.pos_len
         sys.stderr.write(f"nanogo: loaded {args.model} ({config}) on {device}\n")
     sys.stderr.flush()
-    mcts_kwargs = {"value_weight_exp": args.value_weight_exp, "subtree_bias": args.subtree_bias,
-                   "c_puct": args.cpuct, "c_puct_log": args.cpuct_log}
+    mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log}
     engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,
                             leaf_batch=args.leaf_batch, lcb_stdevs=args.lcb_stdevs,
                             mcts_kwargs=mcts_kwargs)
