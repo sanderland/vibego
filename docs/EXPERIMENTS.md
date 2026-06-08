@@ -113,6 +113,35 @@ of KataGo's own at 48 visits with the same net. Remaining gap (smaller): we use 
 running score center), raw atan (no score-stdev smoothing), and no tree reuse. Precise gains
 still want a multi-game arena over single games.
 
+## Matching KataGo's search (our search on b6c96 vs KataGo's own search, same net)
+
+Goal: our MCTS driving KataGo's b6c96 net should match KataGo's own engine at equal visits.
+Measured with `scripts/vs.py --games N` (b18 judge) and tuned with the low-noise per-move
+tool `scripts/move_eval.py`. Proxy: `run_engine -proxy "<katago>"` (`nanogo/engine/proxy.py`).
+
+8 games @ 48 visits, mean judge scoreLead from our side (negative = we trail KataGo):
+
+| change | gap | note |
+|--------|-----|------|
+| win-rate-only Q (start) | ~−108 ± 31 | huge variance, blunder games |
+| + score in utility + pass guard | ~−51 ± 9 | the big win; variance collapses |
+| + LCB lowered 5→1 (KataGo's 5 is tuned for high visits) | ~−42 ± 9 | |
+| + cpuctUtilityStdevScale 0.85 | ~−48 ± 7 | neutral/worse at 48 visits → defaulted off |
+
+All search params/formulas stolen from KataGo (`searchparams.cpp` / `searchhelpers.cpp`):
+score utility `(2/π)atan(score/(scale·√area))` static+dynamic with a recentScoreCenter, log-cpuct,
+mass-scaled FPU (reverted — hurt at low visits), variance-LCB, cpuctUtilityStdevScale (off).
+Also fixed a real bug: under tromp-taylor KataGo's policy includes suicide moves our board
+rejects → search crash → pass fallback.
+
+**Findings:** deficit cut ~108 → ~42 (≈60%). Our search is internally **correct** (engine vs
+itself is balanced, −2.8 ± 4.6 — no perspective bug). The gap doesn't shrink with visits
+(48 vs 128 ≈ same), so it's genuine per-visit search quality, not a low-visit artifact. We lose
+~2× more as White — *game dynamics* (weaker search on the responding side vs KataGo's strong
+opening), not a bug. Remaining param tweaks are within measurement noise. Closing the last ~42
+to true parity would need KataGo's heavier machinery (subtree value bias, uncertainty-weighted
+value averaging) — large effort, diminishing/uncertain returns for a minimal Python MCTS.
+
 ## Open items / next
 
 - **Improve the search (highest priority)**: add score to the PUCT utility, LCB/value move
