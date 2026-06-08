@@ -177,7 +177,8 @@ class MCTS:
                  vloss_weight: float = 1.0, c_puct_log: float = 0.45, c_puct_base: float = 500.0,
                  winloss_factor: float = 1.0, static_score_factor: float = 0.1,
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
-                 dynamic_score_scale: float = 0.75):
+                 dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.85,
+                 cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -196,6 +197,23 @@ class MCTS:
         self.dynamic_score_scale = dynamic_score_scale
         self.sqrt_area = float(pos_len)   # updated to the real board in prepare()
         self.score_center = 0.0           # KataGo's recentScoreCenter (Black perspective)
+        # Scale cpuct by the node's utility uncertainty: explore more at uncertain nodes.
+        self.cpuct_stdev_scale = cpuct_stdev_scale
+        self.cpuct_stdev_prior = cpuct_stdev_prior
+        self.cpuct_stdev_prior_weight = cpuct_stdev_prior_weight
+
+    def _cpuct_stdev_factor(self, node) -> float:
+        n = node.N
+        prior = self.cpuct_stdev_prior
+        if n <= 1:
+            stdev = prior
+        else:
+            uavg = node.W / n
+            usqavg = max(node.Wsq / n, uavg * uavg)
+            var = (((uavg * uavg + prior * prior) * self.cpuct_stdev_prior_weight + usqavg * n)
+                   / (self.cpuct_stdev_prior_weight + n - 1.0) - uavg * uavg)
+            stdev = math.sqrt(max(0.0, var))
+        return 1.0 + self.cpuct_stdev_scale * (stdev / prior - 1.0)
 
     def _utility(self, ev: dict, mover: int) -> float:
         return self.winloss_factor * ev["v"] + self._score_utility(ev["score"], mover)
@@ -232,6 +250,7 @@ class MCTS:
         sqrt_n = math.sqrt(parent_neff + 1)
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
+        cpuct *= self._cpuct_stdev_factor(node)
         parent_v = self._utility(node.eval, node.board.to_move)
         fpu = self.root_fpu if is_root else self.fpu
         best, best_score = None, -1e18
