@@ -137,10 +137,13 @@ def raw_to_eval(board: Board, raw, pos_len: int) -> dict:
     return {"v": v, "winrate": winrate, "score": score, "policy": policy, "ownership": ownership}
 
 
+TWO_OVER_PI = 2.0 / math.pi
+
+
 class Node:
-    # W = sum of search *utility* (winloss + score) used for selection;
-    # Wwl / Wsc = sums of win-loss value and score lead, kept separately for reporting.
-    __slots__ = ("move", "P", "N", "W", "Wwl", "Wsc", "vloss", "board", "eval",
+    # W = sum of search *utility* (winloss + score) used for selection; Wsq = sum of utility^2
+    # (for LCB variance); Wwl / Wsc = win-loss value and score-lead sums, kept for reporting.
+    __slots__ = ("move", "P", "N", "W", "Wsq", "Wwl", "Wsc", "vloss", "board", "eval",
                  "children", "expanded")
 
     def __init__(self, move, prior):
@@ -148,6 +151,7 @@ class Node:
         self.P = prior
         self.N = 0
         self.W = 0.0
+        self.Wsq = 0.0          # sum of utility^2 (for LCB)
         self.Wwl = 0.0          # win-loss value sum (reporting)
         self.Wsc = 0.0          # score-lead sum (reporting)
         self.vloss = 0          # outstanding virtual losses
@@ -167,10 +171,13 @@ class Node:
 
 
 class MCTS:
+    # Defaults stolen from KataGo (cpp/search/searchparams.cpp recommended preset).
     def __init__(self, evaluator: NNEvaluator, komi: float, pos_len: int,
-                 c_puct: float = 1.0, fpu: float = 0.25, vloss_weight: float = 1.0,
-                 score_weight: float = 0.5, score_scale: float = 30.0,
-                 c_puct_log: float = 0.45, c_puct_base: float = 500.0):
+                 c_puct: float = 1.0, fpu: float = 0.2, vloss_weight: float = 1.0,
+                 c_puct_log: float = 0.45, c_puct_base: float = 500.0,
+                 winloss_factor: float = 1.0, static_score_factor: float = 0.1,
+                 dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
+                 dynamic_score_scale: float = 0.75):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -179,13 +186,23 @@ class MCTS:
         self.c_puct_base = c_puct_base
         self.fpu = fpu
         self.vloss_weight = vloss_weight
-        # Search utility = win-loss + score_weight * tanh(scoreLead / score_scale), so the
-        # search values the score margin (not win-rate only) — like KataGo's utility.
-        self.score_weight = score_weight
-        self.score_scale = score_scale
+        # Utility = winloss_factor*winloss + score utility, where the score utility is KataGo's
+        # (2/pi)*atan(score/(scale*sqrtArea)) split into static + dynamic terms.
+        self.winloss_factor = winloss_factor
+        self.static_score_factor = static_score_factor
+        self.dynamic_score_factor = dynamic_score_factor
+        self.static_score_scale = static_score_scale
+        self.dynamic_score_scale = dynamic_score_scale
+        self.sqrt_area = float(pos_len)  # updated to the real board in prepare()
 
     def _utility(self, ev: dict) -> float:
-        return ev["v"] + self.score_weight * math.tanh(ev["score"] / self.score_scale)
+        return self.winloss_factor * ev["v"] + self._score_utility(ev["score"])
+
+    def _score_utility(self, score: float) -> float:
+        a = self.sqrt_area
+        return TWO_OVER_PI * (
+            self.static_score_factor * math.atan(score / (self.static_score_scale * a))
+            + self.dynamic_score_factor * math.atan(score / (self.dynamic_score_scale * a)))
 
     def _eval_boards(self, boards: list[Board]) -> list[dict]:
         # The evaluator owns board -> eval, so alternative evaluators (e.g. a KataGo proxy that
@@ -193,6 +210,7 @@ class MCTS:
         return self.ev.evaluate_boards(boards, self.komi, self.pos_len)
 
     def prepare(self, root_board: Board) -> Node:
+        self.sqrt_area = math.sqrt(root_board.x_size * root_board.y_size)
         root = Node(None, 1.0)
         board = root_board.copy()
         root.eval = self._eval_boards([board])[0]
@@ -270,6 +288,7 @@ class MCTS:
                 n.vloss -= 1
                 n.N += 1
                 n.W += sign * util
+                n.Wsq += util * util       # perspective-independent (sign^2 = 1)
                 n.Wwl += sign * wl
                 n.Wsc += sign * sc
         return len(paths)
@@ -288,9 +307,23 @@ def adaptive_batch(batch_size: int, done: int, visits: int) -> int:
     return max(1, min(batch_size, visits - done, max(1, done)))
 
 
-def lcb(child: "Node", z: float = 1.0) -> float:
-    """Lower-confidence-bound on the move's value from the parent's perspective (utility mean
-    minus a visit-count uncertainty penalty). Robust move selection vs raw max-visits."""
+def lcb(child: "Node", lcb_stdevs: float = 5.0) -> float:
+    """KataGo-style LCB: parent-perspective utility mean minus lcb_stdevs * standard error,
+    where the std error uses the measured variance of the child's utility samples."""
     if child.N <= 0:
         return -1e18
-    return -child.q() - z / math.sqrt(child.N)
+    mean = -child.q()                                  # parent perspective
+    var = max(0.0, child.Wsq / child.N - child.q() ** 2)
+    return mean - lcb_stdevs * math.sqrt(var / child.N)
+
+
+def rank_children(children, lcb_stdevs: float = 5.0, min_visit_prop: float = 0.15):
+    """Order visited children for move selection (best first): among those with enough visits,
+    rank by LCB; the rest fall below, ranked by raw visits — so a barely-visited move with a
+    flukey LCB can't outrank a well-searched one. (KataGo's minVisitPropForLCB.)"""
+    visited = [c for c in children if c.N > 0]
+    if not visited:
+        return []
+    thresh = min_visit_prop * max(c.N for c in visited)
+    return sorted(visited, key=lambda c: (1, lcb(c, lcb_stdevs)) if c.N >= thresh
+                  else (0, c.N), reverse=True)

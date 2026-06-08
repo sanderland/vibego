@@ -30,14 +30,16 @@ class _FakeEval:
 
 def test_score_enters_search_utility():
     ev = {"v": 0.2, "score": 15.0}
-    m = MCTS(None, komi=7.5, pos_len=19, score_weight=0.5, score_scale=30.0)
-    assert abs(m._utility(ev) - (0.2 + 0.5 * math.tanh(15.0 / 30.0))) < 1e-9
-    m0 = MCTS(None, komi=7.5, pos_len=19, score_weight=0.0)
+    m = MCTS(None, komi=7.5, pos_len=19)  # KataGo defaults: static 0.1@2.0, dynamic 0.3@0.75
+    m.sqrt_area = 19.0
+    expected = (2 / math.pi) * (0.1 * math.atan(15 / (2.0 * 19)) + 0.3 * math.atan(15 / (0.75 * 19)))
+    assert abs(m._utility(ev) - (0.2 + expected)) < 1e-9
+    m0 = MCTS(None, komi=7.5, pos_len=19, static_score_factor=0.0, dynamic_score_factor=0.0)
     assert m0._utility(ev) == 0.2  # score off -> win-loss only
 
 
 def test_reporting_separates_winloss_and_score():
-    root = MCTS(_FakeEval(), komi=7.5, pos_len=19, score_weight=0.5).run(Board(7), visits=16, batch_size=4)
+    root = MCTS(_FakeEval(), komi=7.5, pos_len=19).run(Board(7), visits=16, batch_size=4)
     assert root.N >= 16
     assert -1.0 <= root.winloss() <= 1.0
     assert abs(root.score()) <= 6.0 + 1e-6  # reported score lead is the win-loss-independent stat

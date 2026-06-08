@@ -22,7 +22,7 @@ import threading
 import time
 
 from ..go.board import BLACK, WHITE, Board, PASS, gtp_to_xy, opp, xy_to_gtp
-from .search import MCTS, NNEvaluator, adaptive_batch, lcb
+from .search import MCTS, NNEvaluator, adaptive_batch, rank_children
 
 
 def _player(s: str) -> int:
@@ -96,7 +96,7 @@ class AnalysisEngine:
         }
 
         # Order by LCB (robust value), not raw visit count — what gets played is moveInfos[0].
-        visited = sorted((c for c in root.children if c.N > 0), key=lcb, reverse=True)
+        visited = rank_children(root.children)
         move_infos = []
         for order, ch in enumerate(visited):
             mv_wl = -ch.winloss()      # child stats are in the opponent's perspective

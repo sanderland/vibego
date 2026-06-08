@@ -101,15 +101,17 @@ Two tools decompose the gap (both sidestep noisy full games):
 |--------|------|------|-----|------|
 | win-rate-only Q (original) | −44 | −165 | ~−104 | wild color asymmetry = instability |
 | + score in utility | −38 | −128 | ~−83 | helps, not enough |
-| + cpuct-scaling + LCB selection + adaptive leaf-batch | −63 | −61 | **~−62** | **deficit ~halved, asymmetry gone** |
+| + cpuct-scaling + LCB selection + adaptive leaf-batch | −63 | −61 | ~−62 | deficit ~halved, asymmetry gone |
+| + KataGo's real params/formulas (stolen, not swept) | −25 | −45 | **~−35** | **score utility = (2/π)atan(score/(scale·√area)) static+dynamic; variance-based LCB; fpu 0.2; cpuct 1.0/0.45/500** |
 
-Changes: utility = `winloss + score_weight*tanh(scoreLead/score_scale)`; cpuct grows with
-`log(visits)` (KataGo-style); move selection by **LCB** of utility (not raw max-visits);
-**adaptive leaf-batch** (sequential early visits so the tree gets value feedback instead of
-expanding a blind batch). The deficit fell ~104→~62 and the two games are now consistent
-(−63/−61) — the earlier blowouts were search instability. Still behind KataGo (params untuned;
-further refinements remain), but much closer and steadier. Precise gains still want a multi-game
-arena over single games.
+Final params are **stolen from KataGo** (`cpp/search/searchparams.cpp` + `searchhelpers.cpp`),
+not swept: score utility = `staticFactor·(2/π)atan(score/(2·√area)) + dynamicFactor·(2/π)
+atan(score/(0.75·√area))` (factors 0.1 / 0.3), variance-based LCB (`lcbStdevs=5`,
+`minVisitPropForLCB=0.15`), `fpu=0.2`, cpuct `1.0 + 0.45·log((N+500)/500)`. This beat the
+hand-tuned version (~62 → ~35). The deficit fell ~104 → ~35; our search is now within ~35 pts
+of KataGo's own at 48 visits with the same net. Remaining gap (smaller): we use center=0 (no
+running score center), raw atan (no score-stdev smoothing), and no tree reuse. Precise gains
+still want a multi-game arena over single games.
 
 ## Open items / next
 

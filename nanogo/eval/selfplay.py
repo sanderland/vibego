@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import random
 
-from ..engine.search import MCTS, NNEvaluator, lcb
+from ..engine.search import MCTS, NNEvaluator, rank_children
 from ..go.board import BLACK, EMPTY, PASS, WHITE, Board, xy_to_gtp
 
 
@@ -56,12 +56,12 @@ def _choose(root, move_idx, opening_moves, temperature, rng):
             if acc >= r:
                 return c.move
         return children[-1].move
-    return max(children, key=lcb).move  # otherwise pick the LCB-best move
+    return rank_children(children)[0].move  # otherwise pick the LCB-best move
 
 
 def play_game(eval_black: NNEvaluator, eval_white: NNEvaluator, pos_len: int,
               board_size: int = 19, komi: float = 7.5, visits: int = 100,
-              opening_moves: int = 8, temperature: float = 1.0, c_puct: float = 1.5,
+              opening_moves: int = 8, temperature: float = 1.0, c_puct: float = 1.0,
               leaf_batch: int = 16, max_moves: int | None = None, seed: int = 0) -> dict:
     """Play one game; black uses eval_black, white uses eval_white. Returns winner + score."""
     rng = random.Random(seed)
