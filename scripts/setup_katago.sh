@@ -35,7 +35,8 @@ log "Download KataGo $KG_VERSION ($KG_ASSET)"
 mkdir -p katago_cuda models
 # GitHub's release CDN sometimes 504s on plain curl; gh routes around it. Fall back to curl.
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  gh release download "$KG_VERSION" --repo lightvector/KataGo --pattern "$KG_ASSET" --dir /tmp --clobber
+  rm -f "/tmp/$KG_ASSET"   # old gh (2.4) lacks --clobber; clear any stale file first
+  gh release download "$KG_VERSION" --repo lightvector/KataGo --pattern "$KG_ASSET" --dir /tmp
 else
   curl -fL "https://github.com/lightvector/KataGo/releases/download/$KG_VERSION/$KG_ASSET" -o "/tmp/$KG_ASSET"
 fi

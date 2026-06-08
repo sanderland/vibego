@@ -87,6 +87,8 @@ runs/
 wandb/
 data/
 models/
+katago_bin/
+katago_cuda/
 *.bin.gz
 *.npz
 *.npy
