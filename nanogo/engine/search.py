@@ -177,7 +177,7 @@ class MCTS:
                  vloss_weight: float = 1.0, c_puct_log: float = 0.45, c_puct_base: float = 500.0,
                  winloss_factor: float = 1.0, static_score_factor: float = 0.1,
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
-                 dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.85,
+                 dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.0,
                  cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0):
         self.ev = evaluator
         self.komi = komi
