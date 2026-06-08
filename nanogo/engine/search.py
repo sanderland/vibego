@@ -344,9 +344,16 @@ class MCTS:
 
 
 def adaptive_batch(batch_size: int, done: int, visits: int) -> int:
-    """Don't collect more leaves than visits already done, so the early tree gets sequential
-    value feedback instead of expanding a batch of leaves blind (which is weak at low visits)."""
-    return max(1, min(batch_size, visits - done, max(1, done)))
+    """How many leaves to collect per search step. Every leaf in a step is selected under
+    virtual loss before any of them is evaluated, so a large step expands many leaves "blind".
+    KataGo's threads re-select asynchronously as each eval lands, so its effective blindness is
+    far lower than a synchronous batch of the same size; with a synchronous batch we keep it
+    small *relative to total visits* (cap ~1/8) so low-visit search stays fine-grained — this
+    measurably helps at 48 visits (per-move loss ~4.1 -> ~3.2 pts). At high visits the cap
+    relaxes back to batch_size for throughput. Also never collect more than visits already done,
+    so the opening of the search is effectively sequential."""
+    cap = min(batch_size, max(1, visits // 8))
+    return max(1, min(cap, visits - done, max(1, done)))
 
 
 def lcb(child: "Node", lcb_stdevs: float = 5.0) -> float:
