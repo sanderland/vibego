@@ -88,100 +88,90 @@ Two tools decompose the gap (both sidestep noisy full games):
   not the bottleneck**, and the score/ownership heads are well-calibrated.
 
 - **`scripts/run_engine.py -proxy "<katago>"` + `nanogo/engine/proxy.py`** — run *our* MCTS on
-  an external net (search-correctness test). our-search+b6c96 vs KataGo's own search, same
-  b6c96 net, 48 visits (b18 judge): our side lost **both colors (−44, −165)**. Single-game
-  noise inflates the 165, but losing both with the identical net shows **our search is
-  materially weaker per visit** than KataGo's.
+  an external net (search-correctness test). With the proxy's perspective bug fixed (see the
+  next section), our-search+b6c96 vs KataGo's own engine, same net, 48 games @ 48 visits
+  (b18 judge): **−8.7 ± 5.4, 35% win rate** — near parity. The search is sound.
 
-**Conclusion: the in-game gap to b6c96 is dominated by SEARCH, not the net.**
-
-**Search pass (proxy diagnostic, our-search+b6c96 vs KataGo-b6c96 own search, same net, 48 visits):**
-
-| search | as B | as W | avg | note |
-|--------|------|------|-----|------|
-| win-rate-only Q (original) | −44 | −165 | ~−104 | wild color asymmetry = instability |
-| + score in utility | −38 | −128 | ~−83 | helps, not enough |
-| + cpuct-scaling + LCB selection + adaptive leaf-batch | −63 | −61 | ~−62 | deficit ~halved, asymmetry gone |
-| + KataGo's real params/formulas (stolen, not swept) | −25 | −45 | **~−35** | **score utility = (2/π)atan(score/(scale·√area)) static+dynamic; variance-based LCB; fpu 0.2; cpuct 1.0/0.45/500** |
-
-Final params are **stolen from KataGo** (`cpp/search/searchparams.cpp` + `searchhelpers.cpp`),
-not swept: score utility = `staticFactor·(2/π)atan(score/(2·√area)) + dynamicFactor·(2/π)
-atan(score/(0.75·√area))` (factors 0.1 / 0.3), variance-based LCB (`lcbStdevs=5`,
-`minVisitPropForLCB=0.15`), `fpu=0.2`, cpuct `1.0 + 0.45·log((N+500)/500)`. This beat the
-hand-tuned version (~62 → ~35). The deficit fell ~104 → ~35; our search is now within ~35 pts
-of KataGo's own at 48 visits with the same net. Remaining gap (smaller): we use center=0 (no
-running score center), raw atan (no score-stdev smoothing), and no tree reuse. Precise gains
-still want a multi-game arena over single games.
+**Conclusion: the in-game gap to b6c96 is the NET, not the search** — our search on b6c96 nearly
+matches KataGo's own. (For most of the investigation a proxy bug made the search look far
+weaker than it is; the full story is below.)
 
 ## Matching KataGo's search (our search on b6c96 vs KataGo's own search, same net)
 
 Goal: our MCTS driving KataGo's b6c96 net should match KataGo's own engine at equal visits.
-Measured with `scripts/vs.py --games N` (b18 judge) and tuned with the low-noise per-move
-tool `scripts/move_eval.py`. Proxy: `run_engine -proxy "<katago>"` (`nanogo/engine/proxy.py`).
+Proxy: `run_engine -proxy "<katago>"` (`nanogo/engine/proxy.py`). Measured with the concurrent
+**arena** `scripts/match.py` (mean scoreLead ± stderr + win-rate + Elo ± CI, b18 judge) and the
+per-move tool `scripts/move_eval.py`.
 
-Full-game variance is huge (per-game sd ~20–42), so the **primary instrument is
-`move_eval.py`** (points conceded per move on fixed b40 positions, both colors), with full
-games only for confirmation. The "game gap" column below is mean judge scoreLead from our
-side (negative = we trail KataGo), 8–16 games @ 48 visits.
+**RESULT: near parity.** Our search on b6c96 vs KataGo's own engine, same net, 48 games @ 48
+visits, b18 judge: **scoreLead −8.7 ± 5.4, win rate 35%, Elo ≈ −104 [−221, −7]**.
 
-Full-game variance is huge (per-game sd ~30–42), so tuning uses two low-noise instruments:
-`move_eval.py` (points conceded per move on fixed b40 positions, both colors) and
-`scripts/match.py` (concurrent multi-game **arena**: mean scoreLead ± stderr + win/loss
-Elo ± CI). The "game gap" column is mean judge scoreLead from our side (negative = we trail).
+### The −57 was a bug, not search quality
 
-| change | move_eval (pts/move) | game gap | note |
-|--------|----------------------|----------|------|
-| win-rate-only Q (start) | — | ~−108 (lucky low-var sample) | huge variance, blunder games |
-| + score in utility + pass guard + variance-LCB | ~5.2 (n=24) | ~−83 ± 7 | the big algorithmic win |
-| + FPU base = parent-avg blend (KataGo `fpuParentWeightByVisitedPolicy`) | ~3.7 (n=24) | −55 ± 5 | over-optimistic raw-eval base was hurting |
-| + leaf-batch capped ∝ visits (~1/8) | ~3.2 (n=40) | −63 ± 5 (48g) | synchronous virtual-loss batch too "blind" at low visits |
-| + `valueWeightExponent` 0.25 (recursive value recompute) | **~2.4 (n=80)** | **−57 ± 4 (48g)** | upweights above-average children when forming node value |
+For most of this investigation the proxy showed a ~−57 gap, and a long progression of
+KataGo-faithful tuning (score utility, FPU blends, leaf-batch caps, valueWeightExponent) only
+nudged it. All of that was chasing a **perspective bug in the proxy**, found by a deterministic
+node-by-node trace (`scripts/trace_search.py`, batch=1, 10 visits, 9×9):
 
-All formulas stolen from KataGo (`searchparams.cpp` / `searchexplorehelpers.cpp` /
-`searchupdatehelpers.cpp`). The KataGo we benchmark against runs the analysis-mode **parse
-defaults** (the cfg comments them out): `subtreeValueBiasFactor=0.45`,
-`fpuParentWeightByVisitedPolicy=true` (pow 2), `valueWeightExponent=0.25`,
-`cpuctUtilityStdevScale=0.85`. We now match the FPU blend and `valueWeightExponent`.
-`cpuctUtilityStdevScale=0.85` re-tested with move_eval (n=40): a **net wash** (Black 5.1→4.2,
-White 3.1→4.1) → kept off. Also fixed a real bug: under tromp-taylor KataGo's policy includes
-suicide moves our board rejects → search crash → pass fallback.
+- KataGo reports winrate/scoreLead/ownership from **Black's** perspective (the analysis config
+  sets `reportAnalysisWinratesAs=BLACK`). The proxy fed that value to our search as the
+  **side-to-move** value, so **every White-to-move node got a sign-flipped value and score** —
+  half the tree ran on inverted evals.
+- The trace made it unmistakable: at a White-to-move root our proxy returned 0.43 where
+  KataGo's side-to-move value was 0.59 (i.e. it returned *Black's* 0.41). Aggregate game stats
+  had completely hidden it.
 
-**Recursive value recompute (the last KataGo mechanism, now ported).** We replaced the
-implicit flat-MC node value used for selection with an explicit recursive recompute
-(`Node.V`): a weight-1 prior of the node's own nn eval plus its visited children's values
-weighted by visit count. With the two factors off this **telescopes exactly to the MC mean**
-(verified — behaviour-preserving), so the factors are the only new effects:
-- **`valueWeightExponent` (0.25)** — upweights above-average children (z-score CDF^exp) when
-  forming a node's value. **Helps, modestly:** move_eval (n=80) ~3.07→2.41 pts/move; arena
-  (48 games) −63±5 → −57±4. Both instruments agree in direction (each ~1σ alone). Default on.
-- **`subtreeValueBias` (0.45)** — **confirmed NO-OP** in our tree (move_eval 3.07→3.09, n=80).
-  As predicted: flat-MC already propagates each child's full subtree average up (weight 1.0 vs
-  KataGo's partial 0.45), and KataGo's real benefit is *cross-node pattern sharing* which needs
-  transpositions that barely occur in a 48-visit tree. Left off (kept as a flag).
+Fixing the proxy (force BLACK reporting, then flip to side-to-move when White is to move)
+collapsed the gap: **−57 → −8.7**, win rate **0% → 35%**. The bug also explained every earlier
+"finding": the White-side deficit, "engine-vs-itself balanced" (both copies equally buggy, so
+it cancels), and the gap *growing* with visits (16v −46 → 128v −74 — compounding the
+corruption; post-fix it's a mild 16v −5 → 128v −15 with stable ~25–29% win rate).
 
-**Findings:** deficit cut ~−83 → ~−57 this pass (the honest pre-pass number is −83, not the
-earlier lucky −42 single-sample). Our search is internally **correct** (engine vs itself is
-balanced, −2.8 ± 4.6 — no perspective bug). The gap doesn't shrink with visits (48 vs 128 ≈
-same), so it's genuine per-visit search quality. **We have now ported every default-on KataGo
-search mechanism** (score utility, log-cpuct, FPU blend, variance-LCB, recursive value
-recompute / valueWeightExponent); the two we found inert here are subtreeValueBias (needs
-transpositions) and cpuctUtilityStdevScale (wash at 48 visits). The residual ~−57 is the
-ceiling of a synchronous-batch pure-Python MCTS vs KataGo's async-threaded C++ engine with
-graph search and tree reuse — closing it further means matching that infrastructure, not more
-parameters.
+Only the proxy diagnostic was ever affected — the real local-net engine uses side-to-move
+evals natively and was never buggy.
+
+### What actually helped (re-validated on the *fixed* proxy)
+
+- **score in the PUCT utility** (KataGo's static+dynamic atan score utility) — the original
+  win-rate-only Q was a real simplification bug (caught separately).
+- **FPU base = parent running mean blended with raw eval** (KataGo `fpuParentWeightByVisited
+  Policy`, mass²): standard/correct, kept.
+- **leaf-batch capped ∝ visits (~1/8)**: a synchronous virtual-loss batch expands leaves
+  "blind"; KataGo's threads re-select asynchronously. Kept.
+- **variance-based LCB** for final move selection (`lcbStdevs`, `minVisitPropForLCB`).
+- bugfix: under tromp-taylor KataGo's policy includes suicide moves our board rejects → filter
+  proxy policy to our legal moves (was a search crash → pass fallback).
+
+### What we tried and *reverted/left off* (no benefit on correct evals)
+
+- **`valueWeightExponent` (0.25)** + the recursive value-recompute it needs: appeared to help
+  on the *buggy* proxy, but re-tested post-fix it **hurts/neutral** (arena −18.6 vs −10.6 at
+  0.0) — it had only been masking the sign-flip. Reverted to clean flat-MC for selection.
+- **`subtreeValueBias` (0.45)**: confirmed no-op (flat-MC already uses subtree values at full
+  weight; its real benefit is cross-node pattern sharing, and transpositions are **~0.9%** of
+  nodes in a 48-visit tree — measured).
+- **`cpuctUtilityStdevScale` (0.85)**: a wash at 48 visits.
+- **graph search**: ruled out by the 0.9% transposition measurement.
+
+**Bottom line:** the search algorithm was essentially right all along — within ~9 points / 35%
+win rate of KataGo's own engine at equal visits with the same net, once the diagnostic harness
+stopped lying. The residual is the genuine (small) cost of a synchronous pure-Python MCTS vs an
+async-threaded engine. **Lesson: validate the measurement harness with a deterministic
+node-level trace before trusting a long tuning progression.**
 
 ## Open items / next
 
-- **Search params are done** — every default-on KataGo mechanism is ported; the residual −57
-  is infrastructure (async threads / graph search / tree reuse), not parameters. Only pursue if
-  we want to rewrite the search core.
+- **Search matching is done** — near parity (−8.7 ± 5.4, 35% win) once the proxy bug was fixed.
+  The residual is the small cost of synchronous pure-Python MCTS vs an async-threaded engine;
+  not worth a search-core rewrite.
 - ~~Multi-game **arena** (Elo ± CI)~~ — built: `scripts/match.py` (concurrent, scoreLead±se +
-  Elo±CI). Note win/loss Elo is degenerate until we're close enough to actually win games.
+  Elo±CI).
 - Expand features: **territory / pass-alive (18,19)** — cheap (reuse area flood-fill); ladder
   history (15,16) needs prev-board reconstruction in the engine.
 - **Teacher ensembling** (average b18 + b28 + b40 policies, still 1 visit) as the next target-
   quality lever over searched policy.
-- Back to the **own-net** goal: make the distilled nanogo net itself beat b6c96.
+- **Main remaining goal: make the distilled nanogo net itself beat b6c96** — the in-game gap is
+  now the net, not the search.
 
 ## Validation / correctness
 
