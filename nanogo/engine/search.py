@@ -178,7 +178,8 @@ class MCTS:
                  winloss_factor: float = 1.0, static_score_factor: float = 0.1,
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
                  dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.0,
-                 cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0):
+                 cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0,
+                 fpu_parent_pow: float = 2.0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -187,6 +188,7 @@ class MCTS:
         self.c_puct_base = c_puct_base
         self.fpu = fpu                  # FPU reduction = fpu * sqrt(visited policy mass)
         self.root_fpu = root_fpu        # smaller at root -> explore more candidate moves
+        self.fpu_parent_pow = fpu_parent_pow  # blend parent-avg vs raw eval by mass^pow
         self.vloss_weight = vloss_weight
         # Utility = winloss_factor*winloss + score utility, where the score utility is KataGo's
         # (2/pi)*atan(score/(scale*sqrtArea)) split into static + dynamic terms.
@@ -251,8 +253,21 @@ class MCTS:
         cpuct = self.c_puct + self.c_puct_log * math.log(
             (parent_neff + self.c_puct_base) / self.c_puct_base)
         cpuct *= self._cpuct_stdev_factor(node)
-        parent_v = self._utility(node.eval, node.board.to_move)
-        fpu = self.root_fpu if is_root else self.fpu
+        # FPU base = parent's running visit-averaged utility (KataGo's fpuUseParentAverage),
+        # falling back to the raw net eval before the node has any backed-up visits. The
+        # running average tracks the true node value as search refines it; the raw eval is a
+        # one-shot estimate that's often over-optimistic at low visits.
+        # FPU value for unvisited children (KataGo searchexplorehelpers.cpp): the base blends
+        # the node's running utility average with its raw net eval, weighted by how much policy
+        # mass has already been visited (mass^pow), then a mass-scaled reduction is applied so
+        # unvisited moves look progressively worse as the good ones get explored.
+        raw_v = self._utility(node.eval, node.board.to_move)
+        parent_avg = node.q() if node.N > 0 else raw_v
+        visited_mass = sum(ch.P for ch in node.children if ch.N + ch.vloss > 0)
+        avg_w = min(1.0, visited_mass ** self.fpu_parent_pow)
+        parent_v = avg_w * parent_avg + (1.0 - avg_w) * raw_v
+        fpu_max = self.root_fpu if is_root else self.fpu
+        fpu = fpu_max * math.sqrt(max(0.0, visited_mass))
         best, best_score = None, -1e18
         for ch in node.children:
             neff = ch.N + ch.vloss
