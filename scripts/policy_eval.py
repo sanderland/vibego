@@ -25,7 +25,8 @@ import relabel  # noqa: E402  (reuse TeacherEngine + _row_query board reconstruc
 from nanogo.net import data as ndata  # noqa: E402
 
 
-def collect_policies(engine_cmd, queries):
+def collect(engine_cmd, queries):
+    """Return per-position dicts: policy, winrate, score, ownership."""
     eng = relabel.TeacherEngine(engine_cmd)
     out = []
     try:
@@ -33,8 +34,12 @@ def collect_policies(engine_cmd, queries):
             eng.send(q)
         for q in queries:
             r = eng.recv(q["id"])
-            out.append((np.asarray(r["policy"], dtype=np.float64),
-                        float(r["rootInfo"]["winrate"])))
+            out.append({
+                "policy": np.asarray(r["policy"], dtype=np.float64),
+                "winrate": float(r["rootInfo"]["winrate"]),
+                "score": float(r["rootInfo"]["scoreLead"]),
+                "ownership": np.asarray(r.get("ownership", []), dtype=np.float64),
+            })
     finally:
         eng.close()
     return out
@@ -66,17 +71,23 @@ def main():
             queries.append(q)
     print(f"{len(queries)} positions")
 
-    ref = collect_policies(args.ref, queries)
-    ref_top = [int(np.argmax(p)) for p, _ in ref]
+    ref = collect(args.ref, queries)
+    ref_top = [int(np.argmax(r["policy"])) for r in ref]
 
-    print(f"\n{'engine':>10} {'top1%':>7} {'top5%':>7} {'valueMAE':>9}")
+    print(f"\nvs reference (ground truth) — agreement / mean-abs-error per channel")
+    print(f"{'engine':>14} {'pol top1%':>9} {'top5%':>7} {'winrate MAE':>12} "
+          f"{'score MAE':>10} {'ownership MAE':>14}")
     for spec in args.engine:
         name, cmd = spec.split("=", 1)
-        res = collect_policies(cmd, queries)
-        top1 = np.mean([int(np.argmax(p) == ref_top[i]) for i, (p, _) in enumerate(res)])
-        top5 = np.mean([int(ref_top[i] in np.argsort(p)[-5:]) for i, (p, _) in enumerate(res)])
-        vmae = np.mean([abs(res[i][1] - ref[i][1]) for i in range(len(res))])
-        print(f"{name:>10} {100*top1:>6.1f} {100*top5:>6.1f} {vmae:>9.3f}")
+        res = collect(cmd, queries)
+        n = len(res)
+        top1 = np.mean([int(np.argmax(res[i]["policy"]) == ref_top[i]) for i in range(n)])
+        top5 = np.mean([int(ref_top[i] in np.argsort(res[i]["policy"])[-5:]) for i in range(n)])
+        wr = np.mean([abs(res[i]["winrate"] - ref[i]["winrate"]) for i in range(n)])
+        sc = np.mean([abs(res[i]["score"] - ref[i]["score"]) for i in range(n)])
+        ow = np.mean([np.mean(np.abs(res[i]["ownership"] - ref[i]["ownership"]))
+                      for i in range(n) if res[i]["ownership"].size == ref[i]["ownership"].size])
+        print(f"{name:>14} {100*top1:>8.1f} {100*top5:>6.1f} {wr:>12.3f} {sc:>10.2f} {ow:>14.3f}")
 
 
 if __name__ == "__main__":

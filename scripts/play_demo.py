@@ -40,7 +40,7 @@ def main():
         if not visited:
             break
         best = max(visited, key=lambda c: c.N)
-        wr = (1 + root.q()) / 2
+        wr = (1 + root.winloss()) / 2
         print(f"move {i+1}: {'B' if board.to_move == BLACK else 'W'} plays "
               f"{xy_to_gtp(best.move, args.size):4s} visits={best.N} winrate={wr:.2f} "
               f"score={root.eval['score']:+.1f}")

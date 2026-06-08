@@ -81,25 +81,26 @@ class AnalysisEngine:
         as_black = report_as.upper() == "BLACK"
         sign = 1.0 if (not as_black or mover == BLACK) else -1.0
 
-        root_v = root.q()
-        root_winrate = (1.0 + root_v) / 2.0
-        root_score = root.eval["score"]
+        # Search-averaged win-loss and score (reporting uses these, not the search utility).
+        root_wl = root.winloss() if root.N else root.eval["v"]
+        root_score = root.score() if root.N else root.eval["score"]
+        root_winrate = (1.0 + root_wl) / 2.0
         root_info = {
             "visits": root.N,
             "winrate": root_winrate if sign > 0 else 1.0 - root_winrate,
             "scoreLead": sign * root_score,
             "scoreSelfplay": sign * root_score,
             "scoreStdev": 0.0,
-            "utility": (root_v if sign > 0 else -root_v),
+            "utility": (root.q() if sign > 0 else -root.q()),
             "currentPlayer": _player_str(mover),
         }
 
         visited = sorted((c for c in root.children if c.N > 0), key=lambda c: c.N, reverse=True)
         move_infos = []
         for order, ch in enumerate(visited):
-            mv_value = -ch.q()
-            wr = (1.0 + mv_value) / 2.0
-            mv_score = -ch.eval["score"]
+            mv_wl = -ch.winloss()      # child stats are in the opponent's perspective
+            mv_score = -ch.score()
+            wr = (1.0 + mv_wl) / 2.0
             move_infos.append({
                 "move": xy_to_gtp(ch.move, ys),
                 "visits": ch.N,
@@ -108,7 +109,7 @@ class AnalysisEngine:
                 "scoreSelfplay": sign * mv_score,
                 "scoreStdev": 0.0,
                 "prior": ch.P,
-                "utility": mv_value if sign > 0 else -mv_value,
+                "utility": (-ch.q()) if sign > 0 else ch.q(),
                 "order": order,
                 "pv": self._pv(ch, ys),
             })

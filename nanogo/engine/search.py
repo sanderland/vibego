@@ -138,13 +138,18 @@ def raw_to_eval(board: Board, raw, pos_len: int) -> dict:
 
 
 class Node:
-    __slots__ = ("move", "P", "N", "W", "vloss", "board", "eval", "children", "expanded")
+    # W = sum of search *utility* (winloss + score) used for selection;
+    # Wwl / Wsc = sums of win-loss value and score lead, kept separately for reporting.
+    __slots__ = ("move", "P", "N", "W", "Wwl", "Wsc", "vloss", "board", "eval",
+                 "children", "expanded")
 
     def __init__(self, move, prior):
         self.move = move
         self.P = prior
         self.N = 0
         self.W = 0.0
+        self.Wwl = 0.0          # win-loss value sum (reporting)
+        self.Wsc = 0.0          # score-lead sum (reporting)
         self.vloss = 0          # outstanding virtual losses
         self.board: Board | None = None
         self.eval = None
@@ -154,16 +159,30 @@ class Node:
     def q(self):
         return self.W / self.N if self.N > 0 else 0.0
 
+    def winloss(self):
+        return self.Wwl / self.N if self.N > 0 else 0.0
+
+    def score(self):
+        return self.Wsc / self.N if self.N > 0 else 0.0
+
 
 class MCTS:
     def __init__(self, evaluator: NNEvaluator, komi: float, pos_len: int,
-                 c_puct: float = 1.5, fpu: float = 0.25, vloss_weight: float = 1.0):
+                 c_puct: float = 1.5, fpu: float = 0.25, vloss_weight: float = 1.0,
+                 score_weight: float = 0.5, score_scale: float = 30.0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
         self.c_puct = c_puct
         self.fpu = fpu
         self.vloss_weight = vloss_weight
+        # Search utility = win-loss + score_weight * tanh(scoreLead / score_scale), so the
+        # search values the score margin (not win-rate only) — like KataGo's utility.
+        self.score_weight = score_weight
+        self.score_scale = score_scale
+
+    def _utility(self, ev: dict) -> float:
+        return ev["v"] + self.score_weight * math.tanh(ev["score"] / self.score_scale)
 
     def _eval_boards(self, boards: list[Board]) -> list[dict]:
         # The evaluator owns board -> eval, so alternative evaluators (e.g. a KataGo proxy that
@@ -183,7 +202,7 @@ class MCTS:
         # Effective stats include virtual loss (N+vloss visits, each vloss counted as a loss).
         parent_neff = node.N + node.vloss
         sqrt_n = math.sqrt(parent_neff + 1)
-        parent_v = node.eval["v"]
+        parent_v = self._utility(node.eval)
         best, best_score = None, -1e18
         for ch in node.children:
             neff = ch.N + ch.vloss
@@ -233,15 +252,21 @@ class MCTS:
                     leaf.children = [Node(mv, p) for mv, p in ev["policy"].items()]
                     leaf.expanded = True
 
-        # Back up every path, undoing virtual loss.
+        # Back up every path, undoing virtual loss. Accumulate utility (for selection) plus
+        # win-loss and score separately (for reporting), with the per-node perspective sign.
         for path in paths:
             leaf = path[-1]
-            v = leaf.eval["v"]
+            util = self._utility(leaf.eval)
+            wl = leaf.eval["v"]
+            sc = leaf.eval["score"]
             mover = leaf.board.to_move
             for n in path:
+                sign = 1.0 if n.board.to_move == mover else -1.0
                 n.vloss -= 1
                 n.N += 1
-                n.W += v if n.board.to_move == mover else -v
+                n.W += sign * util
+                n.Wwl += sign * wl
+                n.Wsc += sign * sc
         return len(paths)
 
     def run(self, root_board: Board, visits: int, batch_size: int = 16) -> Node:

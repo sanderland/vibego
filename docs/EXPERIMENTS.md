@@ -76,15 +76,16 @@ fixed strong reference (b6c96) while using ~70× less data.
 Two tools decompose the gap (both sidestep noisy full games):
 
 - **`scripts/policy_eval.py`** — raw policy/value agreement with a reference net (no search).
-  vs **b18**, 300 positions:
+  vs **b18**, 300 positions (all output channels):
 
-  | net | top-1 | top-5 | value MAE |
-  |-----|-------|-------|-----------|
-  | ours (distill_1m) | 38.3% | 71.3% | 0.213 |
-  | b6c96 | 33.0% | 63.7% | 0.226 |
+  | net | pol top-1 | top-5 | winrate MAE | score MAE | ownership MAE |
+  |-----|-----------|-------|-------------|-----------|---------------|
+  | ours (distill_1m) | 39.3% | 72.7% | 0.211 | 3.45 | 0.096 |
+  | b6c96 | 32.7% | 70.7% | 0.226 | 5.74 | 0.107 |
 
-  Our raw net matches b18 at least as well as b6c96 does (**biased** — we distilled from b18,
-  the reference). Takeaway: the **network is not the bottleneck**.
+  Our raw net matches b18 at least as well as b6c96 across **policy, winrate, score, and
+  ownership** (**biased** — we distilled from b18, the reference). Takeaway: the **network is
+  not the bottleneck**, and the score/ownership heads are well-calibrated.
 
 - **`scripts/run_engine.py -proxy "<katago>"` + `nanogo/engine/proxy.py`** — run *our* MCTS on
   an external net (search-correctness test). our-search+b6c96 vs KataGo's own search, same
@@ -92,9 +93,16 @@ Two tools decompose the gap (both sidestep noisy full games):
   noise inflates the 165, but losing both with the identical net shows **our search is
   materially weaker per visit** than KataGo's.
 
-**Conclusion: the in-game gap to b6c96 is dominated by SEARCH, not the net.** Likely causes
-(impact order): our Q is **win-rate only and ignores score** (KataGo's utility values score
-margin); move selection by **raw visit count** (vs LCB/playSelectionValue); untuned cpuct/FPU.
+**Conclusion: the in-game gap to b6c96 is dominated by SEARCH, not the net.**
+
+**Fix applied:** the search utility now includes score — `utility = winloss + score_weight *
+tanh(scoreLead / score_scale)` (win-loss and score are also tracked separately for reporting).
+Re-running the proxy diagnostic, our search's deficit shrank (−44→−38, −165→−128) but it still
+trails KataGo's — score-in-Q is necessary but not sufficient. Remaining search work (impact
+order): **cpuct that scales with visits**, **LCB / playSelectionValue move selection** (we pick
+raw max-visits), and **leaf-batch coarseness at low visit counts** (batch 16 over 48 visits =
+few sequential waves). These need their own pass; single-game noise also needs an arena to
+measure precisely.
 
 ## Open items / next
 
