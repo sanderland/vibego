@@ -90,8 +90,17 @@ def _arch_broad():
     ]]
 
 
+def _scale():
+    # Scaling run (more data + steps) on the conv-nbt set to test whether the b6c96 gap closes.
+    # Includes the nbt-vs-nbtpat A/B at DATA SCALE (the only fair test of pattern-memory). Muon 0.04.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [(f"s_{n}", a, "arch", m) for n, a in [
+        ("nbt", "b6c96nbt"), ("dw7", "b7c106nbt"), ("nbtpat", "b6c96nbt-pat"), ("b10nbt", "b10c128nbt"),
+    ]]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
-           "a2": _arch_broad()}
+           "a2": _arch_broad(), "s0": _scale()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
