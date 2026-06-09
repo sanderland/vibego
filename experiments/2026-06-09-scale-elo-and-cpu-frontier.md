@@ -10,9 +10,14 @@ paired scoreLead headline (color-reversed pairs share an opening seed).
 | nbt | b6c96nbt | 561 | −374 | −48.6 ± 5.6 | −338 [−535,−234] |
 | nbtpat | b6c96nbt-pat | 561 | −669 | **−32.6 ± 4.8** | −124 [−227,−40] |
 | dw7 | b7c106nbt | 759 | −417 | **−25.8 ± 5.6** | −124 [−227,−40] |
-| b10nbt | b10c128nbt | 1567 | −280 | *(running)* | *(running)* |
+| b10nbt | b10c128nbt | 1567 | −280 | **−6.9 ± 4.9** (not decisive) | **0 [−87,+87]** |
 
 Findings:
+- **MILESTONE: s_b10nbt reaches statistical parity with the real g170-b6c96 anchor** (paired
+  scoreLead −6.9 ± 4.9, CI spans 0; Elo 0 [−87,+87]) — the first of our nets to close the
+  "net gap" acceptance baseline (was −255 Elo for distill_1m, −280 for the 48-shard b10).
+  It does so at 1567 MFLOP vs the anchor's ~2230 (b10c128-gpool shape) — i.e. **at parity
+  while ~30% cheaper in FLOPs and ~17% in CPU-ms** (17.65 vs 21.20 ms).
 - **Data+steps scaling converts directly into Elo** across the board (dw7: −417 → −124). The
   300 shards are ~2.5M of the 44M available positions (30k×256 ≈ 7.7M samples ≈ 3 epochs);
   the curve has not bent.
