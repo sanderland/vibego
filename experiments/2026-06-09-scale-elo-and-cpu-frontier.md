@@ -126,8 +126,15 @@ cron armed: Stage-B on completion, registry/notes/plot updates, user report.
 
 **s2 val landed (23:26, 5.8 it/s — 60k steps in 2.9h):** dw7pat 2.952 (300sh/30k) →
 **2.879 (600sh/60k)**, same val shards — **scaling still not bent**, and a 759-MFLOP net now
-matches the 1567-MFLOP s_b10nbt's val (2.878). Stage-B Elo running. s3 seed-variance batch
-(dw7/b10nbt/b10pat at seed 2, 300sh/30k) training concurrently.
+matches the 1567-MFLOP s_b10nbt's val (2.878). s3 seed-variance batch (dw7/b10nbt/b10pat at
+seed 2, 300sh/30k) training concurrently.
+
+**s2 Stage-B: Elo −22 [−110,+64], paired scoreLead −10.5 ± 4.7** (decisive on points, near-
+parity in Elo) at 759 MFLOP / 11.2 CPU-ms. The dw7pat data-scaling Elo curve: **−417 (48sh/8k)
+→ −112 (300sh/30k) → −22 (600sh/60k)** — each doubling keeps paying; the frontier is now
+nbtpat(561, −124) → dw7pat600(759, −22) → b10pat(1567, +44). Next scaling point (1200sh/120k,
+~6h) is the obvious spend once s3 frees the GPU; per-position epoch count stays ~3 so the new
+data is genuinely new.
 
 ## Next (s1 batch, queued)
 
