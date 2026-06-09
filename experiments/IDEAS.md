@@ -16,8 +16,13 @@ Each idea: **what** · **why for us** · **open questions / how to test** · sta
 
 These feed ROADMAP Tier-4 (the transformer bet) — cheaper global-mixing primitives that might beat
 softmax attention on the FLOPs↔Elo frontier at small scale. **Status: low priority / speculative** —
-keep parked until the conv-nbt frontier plateaus and #6 (transformer) is actually pursued; their own
-caveats below show no clear win at our N=361, non-causal setting, so they're not near-term roadmap.
+keep parked until the conv-nbt frontier plateaus and #6 is actually pursued; their own caveats below
+show no clear win at our N=361, non-causal setting, so they're not near-term roadmap.
+
+> NB: the *near-term* "richer global connection than gpool" path is in **ROADMAP #6** — cheap
+> content-dependent routing first (**register tokens**, then **axial attention**), full softmax last,
+> all judged speed-matched on ms (at N=361 attention is ~conv-FLOPs; wall-clock is the gate). These
+> linear-attention trunks only become interesting if N is *raised* (e.g. `ireg16` register tokens).
 
 ### RWKV-style linear token-mixing
 - **What:** RWKV ("Receptance Weighted Key Value") — a linear-attention architecture trainable in

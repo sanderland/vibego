@@ -113,17 +113,31 @@ low-priority ideas live in **[IDEAS.md](IDEAS.md)** (don't re-litigate them with
 
 ## Tier 4 — the transformer frontier (bigger bet; uncertain at tiny scale, but the long-range + robustness path)
 
-**6. Transformer block → learnable RoPE → nbt-transformer.**
-- *Why:* discord + survey — `nbt` + **learnable non-axis-aligned RoPE** is the accepted frontier win
-  ("clearest single improvement"); ResTNet reports hybrids help the long-range patterns (ladders,
-  cyclic groups) pure-CNNs miss **and** are less cyclic-attack-vulnerable. *Caveat:* discord warns
-  small transformers struggle to beat small conv nets at equal **inference time**, and the gains
-  lean on Muon — i.e. our small/in-browser scale is where transformers are *weakest*. So:
-  exploratory, judged strictly speed-matched.
-- *Run:* add a `tfrs` block to the registry; speed-match vs nbt; add learnable RoPE (`tflrs`); then
-  `nbttflrs`. Pair with Muon (#7). Decide per ms. *Cost:* high. *Confidence:* med (high upside).
-- *Defer from this family:* `qkn`/`trb` (discord: need fused kernels or they're slower) and `ireg16`
-  inline registers (natural only once a transformer/sequence trunk exists).
+**6. A richer global connection than global pooling (hybrid trunk) → RoPE → nbt-transformer.**
+- *Framing:* the real target is **global connectivity beyond gpool**. Gpool is cheap but
+  low-bandwidth — it broadcasts a *per-channel scalar bias identically everywhere*, so it does **no
+  pairwise spatial routing** (the ladders / distant life-and-death / cyclic-group weakness). We want a
+  few blocks that route content-dependent info *between* board points.
+- *Cost reality:* at **N=361, attention is ~conv-cost in FLOPs** (one self-attn block ≈ a 3×3 conv
+  block at our widths) — the N² scare is for images/long sequences, not a 19×19 board. **The gate is
+  WALL-CLOCK, not FLOPs**: softmax is memory-bound (low arithmetic intensity), needs fused kernels
+  (weakest on our CPU/wasm target) and Muon. So judge **strictly speed-matched on ms**, not FLOPs.
+- *Why hybrid:* proven recipe (KataGo strong nets, ResTNet) — keep the conv-nbt trunk for local
+  pattern, interleave a **few** global blocks (every ~3rd, like gpool now). Helps long-range patterns
+  pure-CNNs miss and is less cyclic-attack-vulnerable.
+- *Run — CHEAP global ops FIRST, full softmax last* (each a `block_kind`, speed-matched A/B vs the
+  gpool baseline, plot Elo vs CPU-ms):
+  1. **Register tokens** — k≈4 learned global tokens attend to the board + scatter back (N×k cost,
+     ~k/N of full attention, wasm-friendly). Cheapest real upgrade over gpool.
+  2. **Axial attention** — attend along rows then columns (~√N cheaper than full; covers most
+     long-range Go structure).
+  3. **Full self-attention block, interleaved** + **learnable non-axis-aligned RoPE** (discord's
+     "clearest single improvement") → `nbttflrs`. Pair with Muon (#7).
+- *Caveat:* small/in-browser scale is where transformers are *weakest at equal ms* — so the cheap
+  probes (1–2) may win the frontier even if (3) doesn't. *Cost:* med–high. *Confidence:* med (high upside).
+- *Defer from this family:* `qkn`/`trb` (need fused kernels or they're slower) and `ireg16` inline
+  registers (natural only once a transformer/sequence trunk exists — and the lever that could make
+  linear attention worthwhile by raising N; see [IDEAS.md](IDEAS.md)).
 
 **7. Training-recipe borrows from Parameter Golf (optimizer + EMA + schedule) — promote.**
 - *Why:* **Muon is the single most-used lever on the entire Parameter Golf leaderboard** (`MuonWD`,
