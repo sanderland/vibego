@@ -98,6 +98,26 @@ does not help 19×19 val** — consistent with KataGo's multi-size-helps claim. 
 (Ops note: screen.py crashed appending the first `axis="data"` row — registry VALID_AXES now
 includes "data"; the s1 trainings survived as orphans and s1_dw7f19's row was appended manually.)
 
+## s1 results (Stage-B, 64 games each, same protocol as s0)
+
+| net | arch | MFLOP | val | paired scoreLead | Elo | vs base |
+|---|---|---|---|---|---|---|
+| s1_dw7pat | b7c106nbt-pat | 759 | 2.952 | −27.0 ± 6.2 | −112 | s_dw7 −25.8 → **no effect** |
+| s1_b10pat | b10c128nbt-pat | 1567 | 2.866 | **+1.7 ± 5.7** (nd) | **+44** [−41,+134] | s_b10nbt −6.9 → +8.6 ± 7.5 (~1.1σ) |
+| s1_dw7f19 | b7c106nbt (19×19-only) | 759 | (3.043*) | −26.2 ± 4.8 | −112 | s_dw7 −25.8 → **wash in Elo too** |
+
+\*filtered val, not comparable (see A/B section — the fixed-val comparison was a wash).
+
+- **First positive point estimate vs the anchor**: s1_b10pat +1.7 scoreLead / Elo +44 (CI spans
+  0 — at-or-above parity, not decisively ahead). New b10-tier champion by point estimate.
+- **pattern_embed is tier-dependent, not universal**: 6b **+16 sL (significant)**, dw7 **−1
+  (nothing)**, b10 +8.6 ± 7.5 (suggestive). Not a clean "saturates with depth" story (b10 is
+  deeper than dw7). Resolving the dw7/b10 deltas properly needs seed replicates or bigger game
+  counts (the queued round-robin/SPRT work). Either way pattern never *hurts* and is ~free →
+  default-on for 6b, optional elsewhere.
+- **19×19 filter confirmed a wash in Elo** (−26.2 vs −25.8), matching the fixed-val result.
+  Keep all data. Closed.
+
 ## s1/s2 launched (20:32)
 
 s1 = s1_dw7pat, s1_b10pat, s1_dw7f19 (300sh/30k, concurrency 3); s2 = s2_dw7pat600

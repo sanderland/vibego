@@ -21,12 +21,15 @@ dated files for full detail.
   Elo in games. Judge net quality by the **arena**, not policy_eval.
 - **Project goal: the FLOPs↔Elo Pareto frontier of small nets in the b6–b10 range** ([ROADMAP](ROADMAP.md)),
   with single-thread CPU-ms as the second cost axis (in-browser engine target). Report Elo vs **both**.
-  Current frontier ([2026-06-09-d](2026-06-09-scale-elo-and-cpu-frontier.md)): **dw7 (b7c106nbt) and
-  b6c96nbt-pat tie at Elo −124** vs the b6c96 anchor (300sh/30k, paired scoreLead −25.8 / −32.6),
-  pattern cheaper by 35% FLOPs; **s1 combos (dw7+pat, b10+pat) queued**.
-- **pattern_embed (3×3 canonical lookup table) is a decisive Elo win at data scale** at ~0 FLOPs /
-  ~2% CPU-ms (−48.6 → −32.6 paired scoreLead vs identical-FLOPs base). At 48-shard screen scale it
-  looked like a −669 disaster — **small-data screens can flip the sign of memory-heavy archs**.
+  Current frontier ([2026-06-09-d](2026-06-09-scale-elo-and-cpu-frontier.md)): b6c96nbt-pat (561 MF,
+  Elo −124) → dw7/dw7pat (759 MF, −112) → **s1_b10pat (b10c128nbt-pat, 1567 MF, Elo +44 [−41,+134]
+  — first positive point estimate vs the anchor, at −30% FLOPs vs its shape)**.
+- **pattern_embed (3×3 canonical lookup table, ~0 FLOPs / ~2% CPU-ms) is a decisive Elo win at 6b
+  at data scale** (−48.6 → −32.6 paired scoreLead) but **tier-dependent**: nothing on dw7, +8.6 ± 7.5
+  (suggestive) on b10. Never hurts, ~free → default-on at 6b. At 48-shard screen scale it looked
+  like a −669 disaster — **small-data screens can flip the sign of memory-heavy archs**.
+- **19×19 filtering is a wash** (fixed-19×19 val Δ ≤ 0.015 with sign flips, Elo −26.2 vs −25.8
+  despite 1.45× more views per position) — keep the 31% non-19×19 data.
 - **Data+steps scaling converts directly into Elo, no bend yet** (dw7 −417 → −124 going 48sh/8k →
   300sh/30k; only 2.5M of 44M positions used). Keep scaling before spending on new data (but see
   the off-policy gate in [2026-06-09-c](2026-06-09-data-distribution-and-stats.md)).
