@@ -23,11 +23,11 @@ from vibego.net.model import Model, ModelConfig
 
 
 @torch.no_grad()
-def eval_dir(model, files, pos_len, batch_size, device, weights, max_batches):
+def eval_dir(model, files, pos_len, batch_size, device, weights, max_batches, only_19x19=False):
     agg, n = {}, 0
     for batch in data.read_batches(files, batch_size, pos_len, device,
                                    randomize_symmetries=False, seed=0, drop_last=False,
-                                   prefetch_ahead=4):
+                                   prefetch_ahead=4, only_full_board=only_19x19):
         outputs = model(batch["spatial"], batch["glob"])
         _, parts = compute_losses(outputs, batch, batch["spatial"], weights)
         for k, v in parts.items():
@@ -46,6 +46,8 @@ def main():
                    help="named npz dirs/files to evaluate on")
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--max-batches", type=int, default=100)
+    p.add_argument("--only-19x19", action="store_true",
+                   help="drop non-19×19 rows (fixed-val for the data-filter A/B)")
     p.add_argument("--device", default=None)
     args = p.parse_args()
 
@@ -65,7 +67,8 @@ def main():
         model.eval()
         for name, files in sets:
             parts, n = eval_dir(model, files, ckpt["model_config"].get("pos_len", 19),
-                                args.batch_size, device, weights, args.max_batches)
+                                args.batch_size, device, weights, args.max_batches,
+                                only_19x19=args.only_19x19)
             if keys is None:
                 keys = sorted(parts)
                 print(f"{'ckpt':12s} {'set':10s} {'batches':>7s} " +

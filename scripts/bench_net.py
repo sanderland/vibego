@@ -68,13 +68,16 @@ def bench(cfg, device, batch, iters, warmup):
     for _ in range(warmup):
         model(sp, gl)
     sync(device)
-    t0 = time.perf_counter()
+    times = []
     for _ in range(iters):
+        t0 = time.perf_counter()
         model(sp, gl)
-    sync(device)
-    dt = time.perf_counter() - t0
-    ms_per_batch = 1000.0 * dt / iters
-    evals_per_s = batch * iters / dt
+        sync(device)
+        times.append(time.perf_counter() - t0)
+    # min-of-iters: robust to bursty contention from concurrent jobs (mean was off by up to
+    # ~50% on a box running matches); min approximates the uncontended time we actually want
+    ms_per_batch = 1000.0 * min(times)
+    evals_per_s = batch / min(times)
     return ms_per_batch, evals_per_s
 
 

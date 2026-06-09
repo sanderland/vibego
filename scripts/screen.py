@@ -99,8 +99,21 @@ def _scale():
     ]]
 
 
+def _scale2():
+    # Follow-ups to s0 at the same scale (300 shards, 30k steps — directly comparable rows):
+    #  - pattern_embed on the frontier nets (s0: pattern was a decisive Elo win on 6b at ~0 cost)
+    #  - the 19×19-only training arm of the data-filter A/B (control = s_dw7, already trained;
+    #    compare BOTH post-hoc on a fixed 19×19 val via eval_loss --only-19x19, then Stage-B)
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("s1_dw7pat", "b7c106nbt-pat", "arch", m),
+        ("s1_b10pat", "b10c128nbt-pat", "arch", m),
+        ("s1_dw7f19", "b7c106nbt", "data", m + ["--only-19x19"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
-           "a2": _arch_broad(), "s0": _scale()}
+           "a2": _arch_broad(), "s0": _scale(), "s1": _scale2()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

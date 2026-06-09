@@ -458,6 +458,11 @@ ARCHS: dict[str, ModelConfig] = {
     # added to the stem of an otherwise-standard arch — ablate the memory-for-FLOPs bet vs the base.
     "b6c96-gpool-pat": ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True), pattern_embed=True),
     "b6c96nbt-pat":   ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True, base="nbt"), pattern_embed=True),
+    # pattern on the current frontier nets: at 300-shard scale pattern was a decisive Elo win on 6b
+    # (paired scoreLead −48.6→−32.6 vs anchor) at ~0 FLOPs/CPU-ms, so combine it with the dw7
+    # champion and the 10b scale point.
+    "b7c106nbt-pat":  ModelConfig(channels=106, block_kinds=_kinds(7, gpool=True, base="nbt"), pattern_embed=True),
+    "b10c128nbt-pat": ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, base="nbt"), pattern_embed=True),
 }
 
 
