@@ -68,6 +68,23 @@ low-priority ideas live in **[IDEAS.md](IDEAS.md)** (don't re-litigate them with
 - *Run:* add the channels to `features.py` (keep the exact-recompute invariant + its test), retrain,
   ablate strength/calibration; watch the small stem-FLOP cost. *Cost:* low–med. *Confidence:* med–high.
 
+**2b. Output side — auxiliary training targets (cheap; data already there).**
+- *Why:* KataGo credits much of its sample-efficiency to **auxiliary heads** (score *distribution*
+  /stdev, short/long-term value, futurepos, seki…) that shape the trunk even if unused at inference.
+  We predict only policy / value(3) / score-mean / ownership — but our relabeled npz **already carry
+  KataGo's full `globalTargetsNC` (64 cols)**, so adding aux losses needs new heads, **not new data**.
+- *Run:* add a score-distribution (or scorestdev) head + a couple more globalTargetsNC terms as aux
+  losses on the dw7 baseline; ablate (Elo + calibration). *Cost:* low. *Confidence:* med.
+
+**2c. Loss-weight tuning (policy/value/score/ownership) — Elo-judged, post-arch.**
+- *Why:* the head weights (`--w-*`, currently KataGo's 1/0.6/0.02/0.15) set what the trunk spends
+  capacity on; under distillation (soft targets) the right balance may differ. **NB: total val-loss
+  is NOT comparable across weight settings (the objective changes) — judge by per-head metrics or
+  Elo.** So this is a Stage-B experiment, not Stage-A screenable.
+- *Run:* a **coarse** probe (not a grid) — e.g. policy-heavy vs balanced vs value-up — on the fixed
+  recipe+arch winner; arena each vs anchor. Sequence **after** recipe (#7) and arch so it's not
+  confounded. *Cost:* med (Elo per variant). *Confidence:* low–med.
+
 **3. Distillation scaling + better targets (power lever; partly in flight on the remote 75G run).**
 - *Why:* our own finding — distillation ~70× more sample-efficient; the in-game gap to b6c96 is the
   net, closed by more data/steps. Teacher **ensembling** (b18+b28+b40 soft targets, à la Rapfi
