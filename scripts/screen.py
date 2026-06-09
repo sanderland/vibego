@@ -61,7 +61,22 @@ def _arch_muon():
     ]]
 
 
-BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon()}
+def _recipe():
+    # Recipe FIRST (before arch): on the fixed champion arch dw7, line-search Muon LR past the a0
+    # edge (0.04 won {0.01,0.02,0.04} -> extend up), + 2 targeted schedule probes. r_lr04 == a0's
+    # t_muon_lr04 (already in registry), so not re-run. Not a grid: 1-D LR line + 2 schedule probes.
+    def muon(lr, extra=()):
+        return ["--optimizer", "muon", "--lr", str(lr), *extra]
+    return [
+        ("r_lr06", "b7c106nbt", "train", muon(0.06)),
+        ("r_lr09", "b7c106nbt", "train", muon(0.09)),
+        ("r_lr13", "b7c106nbt", "train", muon(0.13)),
+        ("r_lr06_wu600", "b7c106nbt", "train", muon(0.06, ["--warmup", "600"])),
+        ("r_lr06_wd0", "b7c106nbt", "train", muon(0.06, ["--lr-final-frac", "0.0"])),
+    ]
+
+
+BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
@@ -88,6 +103,7 @@ def main():
     p.add_argument("--batch", default="a0", choices=list(BATCHES))
     p.add_argument("--data", default="/workspace/distill/screen")
     p.add_argument("--steps", type=int, default=8000)
+    p.add_argument("--eval-interval", type=int, default=0, help="0 = steps//8; smaller = denser early curve")
     p.add_argument("--batch-size", type=int, default=256)
     p.add_argument("--val-files", type=int, default=4)
     p.add_argument("--concurrency", type=int, default=8)
@@ -113,7 +129,7 @@ def main():
                "--data", args.data, "--arch", arch, "--out", out,
                "--max-steps", str(args.steps), "--batch-size", str(args.batch_size),
                "--val-files", str(args.val_files), "--seed", str(args.seed),
-               "--eval-interval", str(max(500, args.steps // 8)),
+               "--eval-interval", str(args.eval_interval or max(500, args.steps // 8)),
                "--save-interval", str(args.steps)] + flags
         return cmd, out, log
 

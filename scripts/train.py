@@ -35,6 +35,8 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--max-steps", type=int, default=20000)
     p.add_argument("--warmup", type=int, default=200)
+    p.add_argument("--lr-final-frac", type=float, default=0.1,
+                   help="cosine decays to this fraction of base LR (0.0 = full warmdown tail)")
     p.add_argument("--eval-interval", type=int, default=500)
     p.add_argument("--eval-batches", type=int, default=20)
     p.add_argument("--save-interval", type=int, default=1000)
@@ -58,14 +60,14 @@ def parse_args():
     return p.parse_args()
 
 
-def lr_frac(step, warmup, max_steps):
-    """Schedule SHAPE in ~[0.1, 1.0]: linear warmup then cosine decay to 0.1. Applied as a
-    multiplier on each param group's base_lr, so multi-LR optimizers (Muon matrix + AdamW scalar)
-    keep their relative scales."""
+def lr_frac(step, warmup, max_steps, final_frac=0.1):
+    """Schedule SHAPE in ~[final_frac, 1.0]: linear warmup then cosine decay to final_frac (set 0.0
+    for a full warmdown tail). Applied as a multiplier on each param group's base_lr, so multi-LR
+    optimizers (Muon matrix + AdamW scalar) keep their relative scales."""
     if step < warmup:
         return (step + 1) / warmup
     t = (step - warmup) / max(1, max_steps - warmup)
-    return 0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
+    return final_frac + (1 - final_frac) * 0.5 * (1 + math.cos(math.pi * min(1.0, t)))
 
 
 def muon_momentum_at(step, target, warmup=1500, start=0.92):
@@ -166,7 +168,7 @@ def main():
     t0 = time.time()
     running = {}
     for step in range(start_step, args.max_steps):
-        frac = lr_frac(step, args.warmup, args.max_steps)
+        frac = lr_frac(step, args.warmup, args.max_steps, args.lr_final_frac)
         for g in opt.param_groups:
             g["lr"] = g["base_lr"] * frac
             if "momentum" in g and args.optimizer == "muon":  # Muon group: warm momentum
