@@ -90,7 +90,8 @@ class Engine:
 
 
 def play_once(black_cmd, white_cmd, args, judge, opening_seed=0):
-    """Play one game; return (judge_or_area_score_BLACK_perspective, n_moves, finished)."""
+    """Play one game; return (judge_or_area_score_BLACK_perspective, moves, finished).
+    moves is the full [["B","Q16"], ...] game record (callers needing the count use len)."""
     engines = {BLACK: Engine(black_cmd), WHITE: Engine(white_cmd)}
     names = {BLACK: "B", WHITE: "W"}
     board = Board(args.board, args.board)
@@ -117,7 +118,7 @@ def play_once(black_cmd, white_cmd, args, judge, opening_seed=0):
     finally:
         engines[BLACK].close()
         engines[WHITE].close()
-    return score, len(moves), passes >= 2
+    return score, moves, passes >= 2
 
 
 def main():
@@ -144,12 +145,12 @@ def main():
             a_black = (g % 2 == 0)
             bk, wh = (args.black, args.white) if a_black else (args.white, args.black)
             # color-reversed pair (g, g+1) shares an opening seed → balanced
-            score_b, nmoves, finished = play_once(bk, wh, args, judge,
-                                                  opening_seed=args.opening_seed + g // 2)
+            score_b, moves, finished = play_once(bk, wh, args, judge,
+                                                 opening_seed=args.opening_seed + g // 2)
             a = score_b if a_black else -score_b
             a_scores.append(a)
             tag = "finished" if finished else "cap"
-            print(f"game {g+1}: A-as-{'B' if a_black else 'W'} -> A {a:+.1f}  ({nmoves} mv, {tag})")
+            print(f"game {g+1}: A-as-{'B' if a_black else 'W'} -> A {a:+.1f}  ({len(moves)} mv, {tag})")
     finally:
         if judge is not None:
             judge.close()

@@ -20,6 +20,7 @@ A's perspective (positive = A ahead / A favored).
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import statistics
@@ -72,22 +73,34 @@ def main():
                    help="forced random opening stones for game diversity (0 = deterministic; "
                         "needed when both engines are deterministic, e.g. vibego-vs-vibego)")
     p.add_argument("--opening-seed", type=int, default=0)
+    p.add_argument("--save-games", default=None, metavar="PATH",
+                   help="append every game as a JSONL record (moves/komi/board/result) — the "
+                        "raw material for on-policy position datasets (off-policy diagnostic)")
     args = p.parse_args()
 
     judge = _LockedJudge(args.judge) if args.judge else None
     print_lock = threading.Lock()
+    if args.save_games:
+        os.makedirs(os.path.dirname(args.save_games) or ".", exist_ok=True)
 
     def play(g: int):
         a_black = (g % 2 == 0)
         bk, wh = (args.a, args.b) if a_black else (args.b, args.a)
         # color-reversed pair (g, g+1) shares an opening seed → balanced
-        score_b, nmoves, finished = play_once(bk, wh, args, judge,
-                                              opening_seed=args.opening_seed + g // 2)
+        score_b, moves, finished = play_once(bk, wh, args, judge,
+                                             opening_seed=args.opening_seed + g // 2)
         a = score_b if a_black else -score_b  # A's perspective
         with print_lock:
             tag = "fin" if finished else "cap"
             print(f"game {g + 1:>3}: {args.a_name}-as-{'B' if a_black else 'W'} "
-                  f"-> {a:+.1f}  ({nmoves} mv, {tag})", flush=True)
+                  f"-> {a:+.1f}  ({len(moves)} mv, {tag})", flush=True)
+            if args.save_games:
+                rec = {"game": g, "a_name": args.a_name, "b_name": args.b_name,
+                       "a_black": a_black, "board": args.board, "komi": args.komi,
+                       "opening_plies": args.opening_plies, "score_a": a,
+                       "finished": finished, "moves": moves}
+                with open(args.save_games, "a") as fh:
+                    fh.write(json.dumps(rec) + "\n")
         return a
 
     try:

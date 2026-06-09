@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vibego.common import get_device
 from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
 from vibego.net.flops import count_flops_params
-from vibego.net.model import Model, arch_config
+from vibego.net.model import Model, PatternEmbed, arch_config
 
 # The bake-off + depth-width nets, in the order we report them.
 DEFAULT = [
@@ -59,6 +59,11 @@ def sync(device):
 def bench(cfg, device, batch, iters, warmup):
     model = Model(cfg).to(device).eval()
     sp = torch.randn(batch, NUM_SPATIAL, cfg.pos_len, cfg.pos_len, device=device)
+    # pattern_embed gathers from a base-3 table indexed by the stone planes, so those two
+    # channels must be valid mutually-exclusive {0,1} masks (gaussians index out of bounds)
+    state = torch.randint(0, 3, (batch, cfg.pos_len, cfg.pos_len), device=device)
+    sp[:, PatternEmbed.OWN_CH] = (state == 1).float()
+    sp[:, PatternEmbed.OPP_CH] = (state == 2).float()
     gl = torch.randn(batch, NUM_GLOBAL, device=device)
     for _ in range(warmup):
         model(sp, gl)
@@ -80,8 +85,12 @@ def main():
     p.add_argument("--batch-sizes", default="1,16", help="comma-separated")
     p.add_argument("--iters", type=int, default=60)
     p.add_argument("--warmup", type=int, default=15)
+    p.add_argument("--threads", type=int, default=0,
+                   help="torch CPU threads (0 = torch default); use 1 for a browser-like bound")
     args = p.parse_args()
 
+    if args.threads:
+        torch.set_num_threads(args.threads)
     device = get_device(args.device)
     batches = [int(b) for b in args.batch_sizes.split(",")]
     nets = [(a, a) for a in args.arch] if args.arch else DEFAULT
