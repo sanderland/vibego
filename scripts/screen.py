@@ -112,8 +112,16 @@ def _scale2():
     ]
 
 
+def _scale3():
+    # Next data/steps scaling point on the expected-best arch (Elo-vs-scale curve hadn't bent at
+    # 300sh/30k). Run with --data /workspace/distill/scale600 --steps 60000 (val shards 0-3 are
+    # the same files as the scale/ subset, so val stays comparable).
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [("s2_dw7pat600", "b7c106nbt-pat", "data", m)]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
-           "a2": _arch_broad(), "s0": _scale(), "s1": _scale2()}
+           "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

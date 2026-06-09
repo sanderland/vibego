@@ -64,8 +64,9 @@ dated files for full detail.
 > Parameter-Golf borrows, transformer/Muon/weight-tying, etc.). The list below is the older
 > net-quality thread, still valid.
 >
-1. **Make our own distilled net beat b6c96** — the main open goal now that search is solved.
-   The in-game gap is the net. Levers below feed this.
+1. **Make our own distilled net beat b6c96** — ~~the main open goal~~ **parity reached 2026-06-09**:
+   s_b10nbt (300sh/30k, Muon) = Elo 0 [−87,+87] vs the anchor at −30% FLOPs. Open: *beat* it
+   decisively, and reach parity in the ≤800 MFLOP tier (best: −124, s1 combos running).
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
    run. Scale the b18-relabeled set well past 1M positions; train longer. (Open — most promising.)
 3. **Teacher ensembling** — average b18 + b28 + b40 soft policies (still 1 visit) as a

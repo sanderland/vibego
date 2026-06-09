@@ -61,13 +61,36 @@ Findings:
 - Registry rows now carry `cpu_ms` (bench_cpu4 values); `pareto_plot.py --cpu` adds the
   CPU-ms panels.
 
-## Off-policy diagnostic plumbing (review #6, gate for data capex)
+## Off-policy diagnostic (review #6, gate for data capex) — gap confirmed, moderate
 
-Built and smoke-tested end-to-end: `match.py --save-games` (JSONL game records) →
-`game_positions.py` (records → source-format npz, full 22-ch packed planes) → `relabel.py`
-(b18, **visits 1, same as the 75G set**) → `eval_loss.py` (same-net loss on archive-val vs
-own-trajectory positions, same teacher both sides — isolates the distribution term).
-Run after stage_b frees the GPU: 32 games s_dw7 vs anchor @48v, stride 3.
+Chain: `match.py --save-games` (32 games s_dw7 vs anchor @48v) → `game_positions.py`
+(stride 3 → 2048 positions, source-format npz) → `relabel.py` (b18, **visits 1, same as the
+75G set**) → `eval_loss.py` (same net, same teacher both sides — isolates the distribution term).
+
+Raw totals mislead: on-trajectory score-loss explodes (7.5 → 42.9) but that's mostly **target
+scale** — KataGo's komi randomization keeps archive games balanced (|scoreLead| mean 3.3,
+sd 6.6) while our match games are decided (mean 18.4, sd 31.5); value-loss is *lower*
+on-policy (decided positions are easy winrate calls). The scale-free measure is the
+**policy KL to the teacher** (CE − teacher entropy; teacher H = 1.71 archive / 1.60 onpolicy,
+19×19 rows only on both sides):
+
+| net | KL archive | KL own-trajectory | excess |
+|---|---|---|---|
+| s_dw7 | 0.74 | 0.98 | **+32%** |
+| s_nbt | 0.78 | 1.02 | +31% |
+| s_b10nbt | 0.67 | 0.90 | +33% |
+
+**Verdict:** a real, consistent ~+32% off-policy policy-KL excess — but moderate, and the
+data-scaling curve hasn't bent (2.5M of 44M positions used). **Decision: keep scaling first**
+(s1/s2 running); revisit on-policy mixing (era-stratified g170 capex, or the DAgger one-shot
+champion polish) when scaling bends. The +0.12 raw-CE gap also bundles komi-7.5 and
+decided-position effects — by design: it measures "our play setup" vs the archive overall.
+
+## s1/s2 launched (20:32)
+
+s1 = s1_dw7pat, s1_b10pat, s1_dw7f19 (300sh/30k, concurrency 3); s2 = s2_dw7pat600
+(600sh/60k, `scale600/` symlink subset — val shards 0–3 identical to `scale/`). 6h check-in
+cron armed: Stage-B on completion, registry/notes/plot updates, user report.
 
 ## Next (s1 batch, queued)
 
