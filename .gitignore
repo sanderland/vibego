@@ -103,3 +103,4 @@ katago_cuda128/
 # experiment results (machine-generated; curated writeups are the markdown notebooks)
 experiments/registry.jsonl
 experiments/frontier.png
+experiments/*.png
