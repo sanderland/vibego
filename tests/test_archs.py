@@ -5,7 +5,10 @@ import pytest
 import torch
 
 from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
-from nanogo.net.model import ARCHS, GPoolResBlock, Model, ModelConfig, NBTResBlock, ResBlock, arch_config
+from nanogo.net.model import (
+    ARCHS, GPoolResBlock, LinAttnResBlock, Model, ModelConfig, NBTResBlock, ResBlock,
+    RWKVResBlock, _q_shift, arch_config,
+)
 
 
 def _block_types(config):
@@ -51,6 +54,57 @@ def test_nbt_is_smaller_per_block_than_regular():
     # The whole point of nbt: more conv depth per parameter -> fewer params at equal b/c label.
     nparams = lambda name: sum(p.numel() for p in Model(arch_config(name)).parameters())
     assert nparams("b6c96nbt") < nparams("b6c96-gpool")
+
+
+def test_global_mixing_archs_place_their_block():
+    # The global-mixing study swaps only the every-3rd slot; conv backbone stays regular.
+    assert _block_types(arch_config("b6c96-linat")) == [
+        "ResBlock", "ResBlock", "LinAttnResBlock",
+        "ResBlock", "ResBlock", "LinAttnResBlock"]
+    assert _block_types(arch_config("b6c96-rwkv")) == [
+        "ResBlock", "ResBlock", "RWKVResBlock",
+        "ResBlock", "ResBlock", "RWKVResBlock"]
+
+
+@pytest.mark.parametrize("block", [LinAttnResBlock(64), RWKVResBlock(64)])
+def test_global_mixing_blocks_are_residual_and_shape_preserving(block):
+    block = block.eval()
+    x = torch.randn(2, 64, 9, 9)
+    out = block(x)
+    assert out.shape == x.shape
+    # Both blocks are wrapped in outer residuals built from convs with no bias and zeroed maps
+    # only at init? They aren't zero-init, so just assert finiteness + that a zero input passes
+    # (degenerate softmax over zeros is uniform, FFN of zero is zero) close to zero.
+    assert torch.isfinite(out).all()
+    z = torch.zeros(2, 64, 9, 9)
+    assert torch.allclose(block(z), z, atol=1e-5)
+
+
+def test_linattn_global_mixing_moves_information():
+    # A single hot pixel must influence *other* positions (global mixing, not a local conv).
+    torch.manual_seed(0)
+    block = LinAttnResBlock(32).eval()
+    x = torch.zeros(1, 32, 7, 7)
+    x[0, :, 3, 3] = 5.0
+    out = block(x) - x
+    far = out[0, :, 0, 0].abs().sum().item()
+    assert far > 0  # corner changed despite the spike being at the centre
+
+
+def test_q_shift_moves_each_quarter_one_pixel():
+    c = 8
+    x = torch.arange(7 * 7, dtype=torch.float32).reshape(1, 1, 7, 7).repeat(1, c, 1, 1)
+    sh = _q_shift(x)
+    q = c // 4
+    # group 0 takes the right neighbour: sh[...,j] == x[...,j+1]
+    assert torch.equal(sh[0, 0, :, :-1], x[0, 0, :, 1:])
+    # group 2 takes the lower neighbour: sh[...,i,:] == x[...,i+1,:]
+    assert torch.equal(sh[0, 2 * q, :-1, :], x[0, 2 * q, 1:, :])
+
+
+def test_linattn_requires_divisible_heads():
+    with pytest.raises(ValueError):
+        LinAttnResBlock(30, heads=4)
 
 
 def test_unknown_arch_raises():

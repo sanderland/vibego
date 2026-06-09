@@ -117,6 +117,133 @@ class NBTResBlock(nn.Module):
         return x + out
 
 
+class LinAttnResBlock(nn.Module):
+    """Linearized-attention block — global token-mixing at O(N·d) instead of softmax's O(N²·d),
+    via a non-negative feature map φ(x)=elu(x)+1 (Katharopoulos et al. 2020, "Transformers are
+    RNNs"). Each board point is a token (N=P·P), multi-head. Structured like a transformer block:
+    a pre-norm linear-attention sublayer + a pre-norm squared-ReLU FFN, both residual.
+
+    Honest caveats (see experiments/IDEAS.md): (1) at N=361 the FLOP win over softmax is *marginal*
+    (softmax≈N²·d, linear≈N·d² are comparable when d~C/heads is not ≪ N) — this block exists to
+    *measure* the trade-off, not to assume it. (2) Linear attention is permutation-equivariant and
+    carries **no internal positional encoding**, so it is meant to be *interspersed with conv
+    blocks* (the registry archs do this — convs supply locality/position, this supplies cheap
+    global mixing, replacing gpool's role)."""
+
+    def __init__(self, c: int, heads: int = 4, ffn_mult: int = 2):
+        super().__init__()
+        if c % heads != 0:
+            raise ValueError(f"channels {c} not divisible by heads {heads}")
+        self.heads = heads
+        self.dh = c // heads
+        self.bn_attn = nn.BatchNorm2d(c)
+        self.qkv = nn.Conv2d(c, 3 * c, 1, bias=False)
+        self.proj = nn.Conv2d(c, c, 1, bias=False)
+        self.bn_ffn = nn.BatchNorm2d(c)
+        self.ffn1 = nn.Conv2d(c, ffn_mult * c, 1, bias=False)
+        self.ffn2 = nn.Conv2d(ffn_mult * c, c, 1, bias=False)
+
+    def _attn(self, x):
+        B, C, H, W = x.shape
+        N = H * W
+        qkv = self.qkv(self.bn_attn(x))  # BN as pre-norm (no relu: would zero half of q/k)
+        q, k, v = qkv.view(B, 3, self.heads, self.dh, N).permute(1, 0, 2, 4, 3).unbind(0)
+        # each is (B, heads, N, dh); feature map φ=elu+1 keeps the attention weights non-negative.
+        fq = Fnn.elu(q) + 1.0
+        fk = Fnn.elu(k) + 1.0
+        kv = torch.einsum("bhnd,bhne->bhde", fk, v)        # (B,heads,dh,dh)  = Σ_j φk_j v_jᵀ
+        z = fk.sum(dim=2)                                  # (B,heads,dh)     = Σ_j φk_j
+        num = torch.einsum("bhnd,bhde->bhne", fq, kv)      # (B,heads,N,dh)
+        den = torch.einsum("bhnd,bhd->bhn", fq, z).clamp_min(1e-6).unsqueeze(-1)
+        out = (num / den).permute(0, 1, 3, 2).reshape(B, C, H, W)
+        return self.proj(out)
+
+    def _ffn(self, x):
+        h = self.ffn1(self.bn_ffn(x))
+        h = Fnn.relu(h) ** 2  # squared-ReLU (smoother, common in modern transformer FFNs)
+        return self.ffn2(h)
+
+    def forward(self, x):
+        x = x + self._attn(x)
+        x = x + self._ffn(x)
+        return x
+
+
+def _q_shift(x: torch.Tensor) -> torch.Tensor:
+    """Vision-RWKV's omnidirectional token shift: split channels into four groups and shift each
+    by one pixel (right/left/down/up neighbour), zero-padded at the border. Injects cheap local
+    context before the (otherwise position-free) global WKV mix. Any channel remainder folds into
+    the last (up-shift) group."""
+    B, C, H, W = x.shape
+    q = C // 4
+    out = torch.zeros_like(x)
+    out[:, 0 * q:1 * q, :, :-1] = x[:, 0 * q:1 * q, :, 1:]    # take right neighbour
+    out[:, 1 * q:2 * q, :, 1:] = x[:, 1 * q:2 * q, :, :-1]    # take left neighbour
+    out[:, 2 * q:3 * q, :-1, :] = x[:, 2 * q:3 * q, 1:, :]    # take lower neighbour
+    out[:, 3 * q:, 1:, :] = x[:, 3 * q:, :-1, :]              # take upper neighbour (+remainder)
+    return out
+
+
+class RWKVResBlock(nn.Module):
+    """A Vision-RWKV-style block (Duan et al. 2024) adapted to the non-causal Go board. RWKV's
+    headline win — KV-cache-free *autoregressive* generation — does not transfer (we do a single
+    pass over 361 fixed tokens), so we keep only the cheap global-mixing primitive:
+
+      * **token shift** (`_q_shift`) + per-channel lerp — local context, mimicking RWKV's mix;
+      * **WKV** as a *non-causal global* mix: per channel, a softmax-over-the-board weighting of v
+        by exp(k), with a learned self-bonus `u`. We **drop RWKV's spatial decay** (a board has no
+        canonical 1-D order, so distance-based decay is meaningless) — the honest 2-D adaptation;
+      * a **receptance** sigmoid gate (r) on the mix, then output projection.
+
+    Followed by RWKV's channel-mix FFN (token-shift → squared-ReLU gate → receptance). All maps are
+    1×1 convs, so the whole block stays in (B,C,H,W). Like `linattn`, it's a low-FLOP global-mixing
+    primitive meant to be interspersed with conv blocks — a candidate to beat gpool/softmax on the
+    FLOPs↔Elo frontier (experiments/IDEAS.md)."""
+
+    def __init__(self, c: int, ffn_mult: int = 2):
+        super().__init__()
+        self.bn_s = nn.BatchNorm2d(c)
+        self.mu_sr = nn.Parameter(torch.full((1, c, 1, 1), 0.5))
+        self.mu_sk = nn.Parameter(torch.full((1, c, 1, 1), 0.5))
+        self.mu_sv = nn.Parameter(torch.full((1, c, 1, 1), 0.5))
+        self.s_r = nn.Conv2d(c, c, 1, bias=False)
+        self.s_k = nn.Conv2d(c, c, 1, bias=False)
+        self.s_v = nn.Conv2d(c, c, 1, bias=False)
+        self.s_o = nn.Conv2d(c, c, 1, bias=False)
+        self.bonus = nn.Parameter(torch.zeros(1, c, 1, 1))   # u: learned self-emphasis in WKV
+        self.bn_c = nn.BatchNorm2d(c)
+        self.mu_cr = nn.Parameter(torch.full((1, c, 1, 1), 0.5))
+        self.mu_ck = nn.Parameter(torch.full((1, c, 1, 1), 0.5))
+        self.c_r = nn.Conv2d(c, c, 1, bias=False)
+        self.c_k = nn.Conv2d(c, ffn_mult * c, 1, bias=False)
+        self.c_v = nn.Conv2d(ffn_mult * c, c, 1, bias=False)
+
+    def _spatial_mix(self, x):
+        h = self.bn_s(x)
+        sh = _q_shift(h)
+        r = torch.sigmoid(self.s_r(h * self.mu_sr + sh * (1 - self.mu_sr)))
+        k = self.s_k(h * self.mu_sk + sh * (1 - self.mu_sk))
+        v = self.s_v(h * self.mu_sv + sh * (1 - self.mu_sv))
+        # Non-causal global WKV: softmax(k)-weighted board mean of v, with a self-bonus exp(u).
+        ek = torch.exp(k - k.amax(dim=(2, 3), keepdim=True))
+        extra = (torch.exp(self.bonus) - 1.0) * ek          # extra weight on the self token
+        num = (ek * v).sum(dim=(2, 3), keepdim=True) + extra * v
+        den = ek.sum(dim=(2, 3), keepdim=True) + extra + 1e-6
+        return self.s_o(r * (num / den))
+
+    def _channel_mix(self, x):
+        h = self.bn_c(x)
+        sh = _q_shift(h)
+        r = torch.sigmoid(self.c_r(h * self.mu_cr + sh * (1 - self.mu_cr)))
+        k = Fnn.relu(self.c_k(h * self.mu_ck + sh * (1 - self.mu_ck))) ** 2
+        return r * self.c_v(k)
+
+    def forward(self, x):
+        x = x + self._spatial_mix(x)
+        x = x + self._channel_mix(x)
+        return x
+
+
 class Model(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -132,6 +259,10 @@ class Model(nn.Module):
                 blocks.append(GPoolResBlock(c, config.gpool_channels))
             elif kind == "nbt":
                 blocks.append(NBTResBlock(c))
+            elif kind == "linattn":
+                blocks.append(LinAttnResBlock(c))
+            elif kind == "rwkv":
+                blocks.append(RWKVResBlock(c))
             else:
                 raise ValueError(f"unknown block kind {kind!r}")
         self.blocks = nn.ModuleList(blocks)
@@ -184,9 +315,11 @@ class Model(nn.Module):
 # Add new named architectures here; train.py / arena.py select them by name. Global pooling
 # (and any future block type) lives entirely inside an arch's block_kinds, not as a global flag.
 
-def _kinds(n: int, gpool: bool = False, base: str = "regular") -> tuple[str, ...]:
-    """n blocks of `base`, with every 3rd a (full-width) global-pooling block when gpool=True."""
-    return tuple("gpool" if (gpool and (i + 1) % 3 == 0) else base for i in range(n))
+def _kinds(n: int, gpool: bool = False, base: str = "regular", glob: str = "gpool") -> tuple[str, ...]:
+    """n blocks of `base`, with every 3rd a global-mixing block (`glob`, default full-width gpool)
+    when gpool=True. `glob` can be any global primitive — gpool / linattn / rwkv — so an arch can
+    swap *which* cheap global op fills the every-3rd slot while holding the conv backbone fixed."""
+    return tuple(glob if (gpool and (i + 1) % 3 == 0) else base for i in range(n))
 
 
 ARCHS: dict[str, ModelConfig] = {
@@ -211,6 +344,14 @@ ARCHS: dict[str, ModelConfig] = {
     "b8c102nbt":      ModelConfig(channels=102, block_kinds=_kinds(8,  gpool=True, base="nbt")),
     "b9c92nbt":       ModelConfig(channels=92,  block_kinds=_kinds(9,  gpool=True, base="nbt")),
     "b10c88nbt":      ModelConfig(channels=88,  block_kinds=_kinds(10, gpool=True, base="nbt")),
+    # --- global-mixing study: regular conv backbone, every-3rd block is the cheap global op
+    # (gpool vs linearized-attention vs RWKV-style mixing). Same conv locality, swapped global
+    # primitive — a direct FLOPs↔Elo comparison of the candidate trunks in experiments/IDEAS.md.
+    # (channels divisible by 4 for linattn's heads.) Speculative — measure on RunPod, don't assume.
+    "b6c96-linat":    ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True, glob="linattn")),
+    "b6c96-rwkv":     ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True, glob="rwkv")),
+    "b10c128-linat":  ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, glob="linattn")),
+    "b10c128-rwkv":   ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, glob="rwkv")),
 }
 
 

@@ -25,6 +25,15 @@ show no clear win at our N=361, non-causal setting, so they're not near-term roa
 > linear-attention trunks only become interesting if N is *raised* (e.g. `ireg16` register tokens).
 
 ### RWKV-style linear token-mixing
+- **Status: IMPLEMENTED as a registry block kind (`rwkv`)** — `RWKVResBlock` in `nanogo/net/model.py`,
+  archs `b6c96-rwkv` / `b10c128-rwkv` (regular conv backbone, every-3rd block = the rwkv mixer,
+  swapping gpool's slot). Vision-RWKV-style (Duan et al. 2024): omnidirectional **token shift**
+  (`_q_shift`) + a **non-causal global WKV** (per-channel softmax-over-board weighting of v by
+  exp(k) with a learned self-bonus `u`) + a **receptance** gate, then RWKV's squared-ReLU channel
+  mix. **Spatial decay dropped** (a board has no canonical 1-D order). All 1×1 convs, stays in
+  (B,C,H,W). Tests in `tests/test_archs.py`. **Next:** bench FLOPs/CPU-ms (`bench_net.py`, now in
+  DEFAULT) + train on RunPod, plot Elo-vs-cost against gpool/nbt. Open: does the global softmax-pool
+  capture long-range relations (ladders) without softmax attention's pairwise structure?
 - **What:** RWKV ("Receptance Weighted Key Value") — a linear-attention architecture trainable in
   parallel like a transformer but with RNN-like O(1)-per-token inference and **no KV cache**. The
   token-mixing is a cheap linear recurrence; channel-mixing is a gated FFN.
@@ -41,6 +50,12 @@ show no clear win at our N=361, non-causal setting, so they're not near-term roa
     softmax-transformer block; plot Elo vs FLOPs/eval and CPU-ms.
 
 ### Linearized / kernel attention (Performer, linear attention, etc.)
+- **Status: IMPLEMENTED as a registry block kind (`linattn`)** — `LinAttnResBlock` in
+  `nanogo/net/model.py`, archs `b6c96-linat` / `b10c128-linat`. Multi-head linear attention with the
+  φ=elu+1 feature map (Katharopoulos et al. 2020), pre-norm attention sublayer + squared-ReLU FFN,
+  both residual; **no internal positional encoding** (permutation-equivariant → interspersed with
+  conv blocks that supply position). Tests in `tests/test_archs.py`. **Next:** the honesty check
+  below — measure FLOPs/eval at N=361 with `bench_net.py` *before* trusting any "cheaper" claim.
 - **What:** replace softmax attention's O(N²·d) with linear attention O(N·d²) via kernel feature
   maps (FAVOR+/elu+1/etc.).
 - **Why for us:** sub-quadratic attention is the standard "cheaper transformer" lever.

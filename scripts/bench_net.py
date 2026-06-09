@@ -29,6 +29,9 @@ DEFAULT = [
     ("old6b", "b6c96-gpool"), ("nbt6b", "b6c96nbt"), ("nbt6b_matched", "b6c112nbt"),
     ("old10b", "b10c128-gpool"), ("nbt10b", "b10c128nbt"), ("nbt10b_matched", "b10c152nbt"),
     ("dw7", "b7c106nbt"), ("dw8", "b8c102nbt"), ("dw9", "b9c92nbt"), ("dw10", "b10c88nbt"),
+    # global-mixing study (every-3rd slot = gpool vs linattn vs rwkv; cf. experiments/IDEAS.md)
+    ("linat6b", "b6c96-linat"), ("rwkv6b", "b6c96-rwkv"),
+    ("linat10b", "b10c128-linat"), ("rwkv10b", "b10c128-rwkv"),
 ]
 
 
