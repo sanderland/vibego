@@ -90,11 +90,23 @@ class TeacherEngine:
         return self._get()
 
     def close(self):
+        # Close stdin first: the engine sees EOF and shuts down cleanly. Then WAIT for it to
+        # actually exit before returning — otherwise a dying engine is still freeing its GPU
+        # memory while the next engine (e.g. the next net, or a heavy ref like b40) starts
+        # allocating, and on MPS/Metal that race can OOM the new process at load (seen as a
+        # BrokenPipe / "engine closed" when running many engines back to back).
         try:
             self.proc.stdin.close()
         except Exception:
             pass
-        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=15)
+        except Exception:
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=5)
+            except Exception:
+                self.proc.kill()
 
 
 def _row_query(bin_full, glob_full, pos_len, komi_idx, qid, visits):

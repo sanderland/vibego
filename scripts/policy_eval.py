@@ -25,28 +25,24 @@ import relabel  # noqa: E402  (reuse TeacherEngine + _row_query board reconstruc
 from nanogo.net import data as ndata  # noqa: E402
 
 
-def collect(engine_cmd, queries, chunk=16):
+def collect(engine_cmd, queries):
     """Return per-position dicts: policy, winrate, score, ownership.
 
-    Send/recv in small chunks: sending *all* queries before reading deadlocks for engines with
-    large responses (ours: 361 policy + 361 ownership floats per position) — the engine's stdout
-    pipe fills, it blocks on write and stops reading our stdin. Reading after each small chunk
-    keeps the pipe drained."""
+    Safe to send all queries before reading: TeacherEngine drains stdout on a background thread
+    (no pipe deadlock)."""
     eng = relabel.TeacherEngine(engine_cmd)
     out = []
     try:
-        for i in range(0, len(queries), chunk):
-            batch = queries[i:i + chunk]
-            for q in batch:
-                eng.send(q)
-            for q in batch:
-                r = eng.recv(q["id"])
-                out.append({
-                    "policy": np.asarray(r["policy"], dtype=np.float64),
-                    "winrate": float(r["rootInfo"]["winrate"]),
-                    "score": float(r["rootInfo"]["scoreLead"]),
-                    "ownership": np.asarray(r.get("ownership", []), dtype=np.float64),
-                })
+        for q in queries:
+            eng.send(q)
+        for q in queries:
+            r = eng.recv(q["id"])
+            out.append({
+                "policy": np.asarray(r["policy"], dtype=np.float64),
+                "winrate": float(r["rootInfo"]["winrate"]),
+                "score": float(r["rootInfo"]["scoreLead"]),
+                "ownership": np.asarray(r.get("ownership", []), dtype=np.float64),
+            })
     finally:
         eng.close()
     return out
@@ -86,8 +82,17 @@ def main():
           f"{'score MAE':>10} {'ownership MAE':>14}")
     for spec in args.engine:
         name, cmd = spec.split("=", 1)
-        res = collect(cmd, queries)
+        try:
+            res = collect(cmd, queries)
+        except Exception as e:
+            # One flaky engine (e.g. a subprocess that dies at startup when many are launched
+            # back-to-back) shouldn't abort the whole sweep and orphan the rest — skip and go on.
+            print(f"{name:>14}   [SKIP: {type(e).__name__}: {e}]")
+            continue
         n = len(res)
+        if n < len(queries):
+            print(f"{name:>14}   [SKIP: got {n}/{len(queries)} responses]")
+            continue
         top1 = np.mean([int(np.argmax(res[i]["policy"]) == ref_top[i]) for i in range(n)])
         top5 = np.mean([int(ref_top[i] in np.argsort(res[i]["policy"])[-5:]) for i in range(n)])
         wr = np.mean([abs(res[i]["winrate"] - ref[i]["winrate"]) for i in range(n)])

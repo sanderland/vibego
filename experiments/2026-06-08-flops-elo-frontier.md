@@ -97,11 +97,20 @@ games = effectively 2 distinct games → win-rates collapsed to 0/12/24 and Elo 
 margins) as expected. Also noted: `policy_eval` **deadlocks at n=500** (sends all queries before
 reading → pipe fills); using n=300 until that's fixed.
 
-Arena Elo (above) was then run validly. **Intrinsic deferred** — two more `policy_eval` bugs: the
-send-all-then-read **deadlock** (fixed: `collect()` now chunks send/recv), and a deeper one — our
-`run_engine` **crashes on some reconstructed npz position** ("teacher engine closed"). Since Elo is
-the real frontier axis, intrinsic is logged as a TODO (fix `run_engine` robustness on edge-case
-positions) rather than chased here.
+Arena Elo (above) was then run validly. The intrinsic run *appeared* to crash (`run_engine`
+"BrokenPipe") — but that was **operator error, not a bug**: the `policy_eval` invocation built its
+`--engine "name=cmd"` args in a shell loop and `eval`-ed them, and the nested quotes collapsed
+(the `run_engine` commands contain spaces), concatenating all ten net names into one mangled
+argument. Fixed by building the args as a bash **array** (no `eval`); the full 12-engine run then
+ran clean. Genuine improvements that fell out: `policy_eval` now **skips a failed engine** instead
+of aborting the sweep (which is what revealed the mangled name), and `TeacherEngine.close()` now
+**waits** for clean subprocess teardown. (No `run_engine` or deadlock bug existed.)
+
+**Intrinsic (raw-net agreement vs neutral b40, n=300)** is too noisy at 8k-steps to rank our
+nearby nets — top-1 clusters at ~29–37% for all ten (e.g. `dw7` 34.3 and `nbt6b_matched` 34.3 sit
+together despite +232 vs −0 Elo), `nbt10b_matched` highest at 37.0. All ≈ `g170-b6c96` (33.7),
+below `g170-b10c128` (42.0). Net: **intrinsic confirms only the coarse "our nets ≈ b6c96 tier"; it
+cannot resolve the frontier — Elo does.**
 
 ## Conclusions
 
@@ -121,6 +130,7 @@ positions) rather than chased here.
   the deliverable.
 - Bench is PyTorch (oneDNN/MPS); **wasm wall-clock is the real x-axis** and may reorder the
   FLOP-efficiency gap — the eventual validation (ROADMAP Tier-3 #5).
-- **Harness bugs fixed this run:** deterministic self-play → randomized openings (`vs.py`/`match.py`,
-  `tests/test_vs.py`); `policy_eval` send/recv deadlock → chunked. **Still open:** `run_engine`
-  crashes on some npz-reconstructed positions (blocks intrinsic).
+- **Harness work this run:** found+fixed **deterministic self-play** → randomized openings
+  (`vs.py`/`match.py`, `tests/test_vs.py`); made `policy_eval` resilient (skip a failed engine) and
+  `TeacherEngine.close()` wait for teardown. The apparent "`run_engine` crash" was an **operator
+  shell-quoting bug** in the eval invocation, not a code bug — no open engine bug.

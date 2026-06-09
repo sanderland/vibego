@@ -25,9 +25,13 @@ dated files for full detail.
   on CPU, ~1.9× on MPS) — so FLOPs is a *better* wall-clock proxy on CPU than GPU, but on real CPU
   **`old10b` dominates `nbt10b`** (equal Elo, faster): the axis choice flips the 10b pick. Report Elo
   vs **both** FLOPs and CPU-ms. (All 8k-step undertrained; relative frontier, not absolute strength.)
-- **Two harness bugs found & fixed by actually running the arena:** (1) deterministic self-play
-  (genmove always plays the top move → identical games) → **randomized openings** in `vs.py`/
-  `match.py` (`tests/test_vs.py`); (2) `policy_eval` send-all-then-read **deadlock** → chunked.
+- **Harness lesson from actually running the arena:** the real bug was **deterministic self-play**
+  (genmove always plays the top move → identical games per colour) → fixed with **randomized
+  openings** in `vs.py`/`match.py` (`tests/test_vs.py`). A separate "engine crash" during intrinsic
+  turned out to be **operator error** (shell-quoting in the `policy_eval` invocation — built
+  `--engine` args in a loop + `eval`, collapsing quotes), not a code bug; lesson: **inspect the
+  actual failing command before theorizing** (chased deadlock/GPU/orphan ghosts first). Genuine
+  fixes that fell out: `policy_eval` skips a failed engine; `TeacherEngine.close()` waits for teardown.
 - **Distillation (logit-forcing from b18) is ~70× more data-efficient** than supervised training
   on npz game outcomes, and gives much better-calibrated value/score/ownership. 0.10M b18-labeled
   positions ≈ 7.4M supervised positions against b6c96.
@@ -50,9 +54,6 @@ dated files for full detail.
 > Parameter-Golf borrows, transformer/Muon/weight-tying, etc.). The list below is the older
 > net-quality thread, still valid.
 >
-> **Open harness bug:** `run_engine` crashes on some npz-reconstructed positions ("teacher engine
-> closed") — blocks intrinsic `policy_eval` of our nets. Fix engine robustness on edge-case positions.
-
 1. **Make our own distilled net beat b6c96** — the main open goal now that search is solved.
    The in-game gap is the net. Levers below feed this.
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
