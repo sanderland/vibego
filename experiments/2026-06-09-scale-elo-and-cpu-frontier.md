@@ -86,6 +86,18 @@ data-scaling curve hasn't bent (2.5M of 44M positions used). **Decision: keep sc
 champion polish) when scaling bends. The +0.12 raw-CE gap also bundles komi-7.5 and
 decided-position effects — by design: it measures "our play setup" vs the archive overall.
 
+## 19×19-filter A/B (review queue item) — filtering is a WASH, keep all data
+
+s1_dw7f19 (dw7, `--only-19x19`, 300sh/30k — sees each 19×19 position ~1.45× more often than
+the control at equal steps) vs s_dw7 (all data), both evaluated on the SAME fixed 19×19 val
+(scale shards 0–1 via `eval_loss --only-19x19`): total 3.040/3.069 vs 3.025/3.077 — sign flips
+between shards, |Δ| ≤ 0.015, policy ~+0.005 for all-data. **Dropping the 31% non-19×19 data
+does not help 19×19 val** — consistent with KataGo's multi-size-helps claim. Keep all data;
+`--only-19x19` stays available for inference-time experiments only.
+
+(Ops note: screen.py crashed appending the first `axis="data"` row — registry VALID_AXES now
+includes "data"; the s1 trainings survived as orphans and s1_dw7f19's row was appended manually.)
+
 ## s1/s2 launched (20:32)
 
 s1 = s1_dw7pat, s1_b10pat, s1_dw7f19 (300sh/30k, concurrency 3); s2 = s2_dw7pat600
