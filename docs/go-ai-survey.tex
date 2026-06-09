@@ -42,9 +42,11 @@ reproductions to \textbf{KataGo} \cite{katago2019}, the strongest open engine an
 de facto reference implementation of the modern recipe. Throughout, the unifying object
 is the \emph{AlphaZero template}: a single neural network with a policy head and a value
 head, trained on targets distilled from its own tree search during self-play
-\cite{alphazero2018}. Every engine we discuss is a variation on this template; the
+\cite{alphazero2018}. Nearly every strong engine is a variation on this template; the
 differences --- which are the substance of the field --- lie in the search, the network
-architecture, and the training targets. We organize the survey around exactly those axes.
+architecture, and the training targets. We organize the survey around exactly those axes,
+and note along the way the recent work that challenges whether each ingredient (a policy
+head, MCTS at all) is truly necessary (Section~\ref{sec:search}).
 
 \section{Foundations: the AlphaGo family}
 Modern Go AI begins with \textbf{AlphaGo} \cite{alphago2016}, which combined deep
@@ -60,6 +62,22 @@ group \cite{cgisurvey2016}.
 
 \section{Search and planning}
 \label{sec:search}
+Before neural networks, game-playing search split along the branching factor.
+Perfect-information games with modest branching yielded to \textbf{minimax} with
+\textbf{alpha--beta} pruning over a handcrafted evaluation --- the line that produced
+Deep Blue's 1997 defeat of Kasparov \cite{deepblue2002} and that underpinned classical chess
+engines for two decades (modern Stockfish still searches with alpha--beta but has replaced
+its handcrafted evaluation with an NNUE network, Section~\ref{sec:beyond}). Go's far larger branching factor defeated this approach; the breakthrough
+that made it tractable was \textbf{Monte-Carlo Tree Search}. \textbf{UCT} \cite{uct2006}
+cast move selection as a bandit problem, using an upper-confidence rule to balance
+exploration against exploitation and growing the tree asymmetrically toward promising lines,
+and \textbf{RAVE} (rapid action-value estimation) sharpened early estimates by sharing
+statistics across transposed moves \cite{rave2007}. These techniques carried the pre-AlphaGo
+engines (Crazy Stone, Zen) to strong-amateur strength; Browne et al.\ survey the MCTS family
+\cite{mctssurvey2012}. AlphaGo's contribution to \emph{search} was to replace hand-built
+rollout policies and evaluations with learned ones through the \textbf{PUCT} rule, which
+folds a neural policy prior into the UCT selection formula.
+
 At play time, an AlphaZero-style engine does not trust the network's raw policy; it runs
 MCTS with the PUCT selection rule, using the network's value head to evaluate leaves and
 its policy head as a prior. The search both improves the move actually played and, during
@@ -71,10 +89,15 @@ learns a latent dynamics model jointly with policy, value, and reward, and plans
 learned model. On Go, chess, and shogi it matched AlphaZero \emph{without} being given the
 rules, and set the state of the art on Atari. For perfect-information Go the practical effect
 is modest --- the rules are known --- but MuZero is the conceptual bridge from ``search a
-known game tree'' to ``search a learned model.'' Subsequent work makes MuZero cheaper to
-train (\textbf{ReZero} reuses buffer information via backward-view reanalysis
-\cite{rezero2024}) and more interpretable (work demystifying what its learned latent model
-actually represents during planning \cite{demystifymuzero2024}).
+known game tree'' to ``search a learned model.'' A line of \emph{sample-efficiency} successors makes
+learned-model planning practical on far less data --- \textbf{EfficientZero} added a
+self-supervised consistency loss to reach \emph{superhuman} mean Atari performance from two
+hours of data (the Atari 100k benchmark) \cite{efficientzero2021}, and \textbf{EfficientZero
+V2} generalized the recipe across
+discrete and continuous control \cite{efficientzerov2}; \textbf{ReZero} reuses buffer
+information via backward-view reanalysis \cite{rezero2024}, while other work demystifies
+what MuZero's learned latent model actually represents during planning
+\cite{demystifymuzero2024}.
 
 \textbf{Gumbel MuZero / Gumbel AlphaZero} \cite{gumbel2022} rethinks how MCTS selects
 actions. Standard PUCT can fail to be a sound policy-improvement operator when the
@@ -95,10 +118,23 @@ to learn more per self-play game. Beyond perfect information, \textbf{Student of
 regret minimization, applying one algorithm to both perfect- and imperfect-information
 games --- evidence that the planning template generalizes well beyond Go.
 
+Two recent results question how essential the template's individual ingredients really are.
+\textbf{Athénan} \cite{athenan2023} is competitive with AlphaZero across a range of board
+games using a \emph{minimax}-based self-play algorithm (``Descent'') with \emph{no} policy
+head (its strongest results are on games smaller than $19\times19$ Go), and \textbf{QZero}
+\cite{qzero2026} reports AlphaGo-level Go from \emph{model-free} reinforcement learning that
+uses no MCTS during training at all. Neither has displaced KataGo in practice,
+but together they are a useful reminder that ``policy/value network + MCTS'' is the dominant
+recipe, not a proven necessity.
+
 \section{Network architectures}
 \label{sec:arch}
+Given a fixed search, the network that evaluates positions is the other half of an engine's
+strength. We trace the trunk from the AlphaZero-era residual stack through KataGo's
+nested-bottleneck refinement and global pooling, then to the recent wave of transformer and
+sequence-model backbones.
 
-\subsection{Residual trunks and the road to ``nbt''}
+\subsection{Residual trunks and the road to nested bottlenecks}
 \label{sec:nbt}
 The AlphaZero-era trunk is a stack of \emph{regular} pre-activation residual blocks (two
 $3\times3$ convolutions plus a skip connection). The \emph{bottleneck} residual block ---
@@ -131,13 +167,15 @@ is ahead, the total score, the life-and-death status of a large group. KataGo ad
 this with \emph{global pooling} residual blocks that mean/max-pool over the whole board and
 broadcast the result back as a per-channel bias \cite{katago2019}. This gives the trunk a
 cheap channel for board-wide reasoning and is one reason KataGo's score and ownership heads
-work as well as they do.
+work as well as they do. The same fully-convolutional-plus-global-pooling design also makes a
+net board-size agnostic, as exploited by Polygames \cite{polygames2020}.
 
 \subsection{Transformer backbones}
 The most active recent architectural question is whether attention should replace or
 augment the convolutional trunk. Convolutions have a fixed local receptive field, whereas
 many decisive Go relationships --- ladders, large-scale capturing races, cyclic groups ---
-are long-range. Several works study this directly. \textbf{Vision Transformers for
+are long-range. Several works study this directly, adapting the vision transformer
+\cite{vit2021} from image recognition to the board. \textbf{Vision Transformers for
 Computer Go} \cite{vitgo2023} benchmarks ViT-style backbones against ResNet inside an
 AlphaZero-style policy/value network. \textbf{ResTNet} \cite{restnet2025} interleaves
 residual and transformer blocks within the trunk, reporting that the transformer blocks
@@ -150,7 +188,8 @@ sizes.
 The transformer wave is broader than Go. In chess, \textbf{ChessBench} \cite{chessbench2024}
 trains large transformers by supervised learning on engine-annotated positions and reaches
 grandmaster-level play without any explicit search, while \textbf{Chessformer}
-\cite{chessformer2024} trains an encoder-only transformer via AlphaZero-style self-play.
+\cite{chessformer2024} trains an encoder-only transformer by supervised learning on a
+\emph{static} dataset of AlphaZero self-play games (not online self-play).
 A careful counterpoint, \textbf{AlphaVile} \cite{alphavile2024}, finds for chess that
 improving the input \emph{representation} of an AlphaZero network buys more strength than
 swapping its convolutions for a transformer --- a reminder that architecture is not
@@ -177,7 +216,9 @@ learned representation actually contains, a question that the robustness literat
 The years 2017--2021 saw a crowded field of strong engines competing at the UEC Cup, the
 ICGA Computer Olympiad, and the World AI Go Open, alongside online rating servers such as
 CGOS. Surveying the engines is the most direct way to see which ideas mattered in practice.
-Table~\ref{tab:engines} summarizes the principal engines of the deep-learning era.
+Table~\ref{tab:engines} summarizes the principal engines of the deep-learning era; we focus
+on those with the clearest published descriptions or historical weight, and so pass over
+several competitive programs (e.g.\ AQ, and the earlier MCTS-era Pachi, Ray, and Aya).
 
 \begin{table}[ht]
 \centering
@@ -288,19 +329,55 @@ fully-observable game. One constructive response is to attack the underlying wea
 directly --- formal life-and-death solvers that can certify the status of the very groups the
 cyclic attack exploits \cite{lndsolver2025}.
 
+\section{Beyond Go: the broader game-AI context}
+\label{sec:beyond}
+The AlphaZero template did not arise in isolation, and Go is one point on a wider arc.
+\begin{itemize}[noitemsep]
+  \item \textbf{Self-play RL} long predates AlphaGo: \textbf{TD-Gammon} reached expert
+        backgammon strength by temporal-difference learning from self-play in the
+        1990s \cite{tdgammon1995}, the original demonstration that a network could bootstrap
+        its own training signal.
+  \item In \textbf{chess}, the classical alpha--beta engine (Deep Blue \cite{deepblue2002})
+        was eventually matched and overtaken by hybrid search-plus-network systems: Stockfish
+        replaced its handcrafted evaluation with a small, efficiently-updatable network
+        (NNUE), while Leela Chess Zero followed the AlphaZero self-play recipe directly. Much
+        of the architecture experimentation most relevant to Go now happens in chess ---
+        transformer policies trained by supervised learning \cite{chessbench2024} or
+        self-play \cite{chessformer2024}, the representation-over-architecture finding of
+        AlphaVile \cite{alphavile2024}, and graph-neural-network board encodings that transfer
+        across board sizes (AlphaGateau) \cite{alphagateau2024}.
+  \item The \textbf{Atari} benchmark drove model-free deep RL --- DQN \cite{dqn2015}, then
+        actor-critic and policy-gradient methods such as A3C \cite{a3c2016} and PPO
+        \cite{ppo2017} --- and remained a model-free stronghold until MuZero \cite{muzero2020}
+        brought learned-model planning to parity.
+  \item \textbf{Imperfect-information and real-time} games are where the template is still
+        being stretched: OpenAI Five reached professional Dota 2 \cite{openaifive2019} and
+        AlphaStar reached Grandmaster StarCraft II \cite{alphastar2019}, both through
+        large-scale self-play, while Student of Games (Section~\ref{sec:search}) unifies the
+        perfect- and imperfect-information cases \cite{studentofgames2022}.
+\end{itemize}
+These domains share Go's core ingredients --- self-play, a policy/value network, and search
+or planning --- and differ mainly in how much of the environment must be \emph{learned} and
+how much hidden information the agent must reason about.
+
 \section{Emerging directions}
 \label{sec:emerging}
-Three threads are worth watching. First, \textbf{language models as planners}: recent work
+Four threads are worth watching. First, \textbf{language models as planners}: recent work
 uses an LLM as the policy/value function for external MCTS, or has it generate a linearized
 search internally, reaching strong play across several board games at human-like search
 budgets \cite{llmplanning2025}, and related work re-injects human conceptual knowledge into
 Go engines that the pure-self-play recipe had discarded \cite{mixexpert2026}. Second,
 \textbf{interpretability}: probing studies find evidence of learned look-ahead inside
-chess-playing networks \cite{interpchess2024}, complementing the Othello world-model results
-and bearing directly on \emph{why} the cyclic blind spot exists. Third, \textbf{architecture
-search} continues, with the transformer-vs-convolution question (Section~\ref{sec:arch}) far
-from settled --- the strongest current evidence is that hybrids help on long-range patterns
-\cite{restnet2025} while representation can matter more than the backbone \cite{alphavile2024}.
+chess-playing networks \cite{interpchess2024}, and Go-native work extracts human-teachable
+interaction patterns from KataGo's value network \cite{interpgo2023}, complementing the
+Othello world-model results and bearing directly on \emph{why} the cyclic blind spot exists.
+Third, \textbf{architecture search} continues, with the transformer-vs-convolution question
+(Section~\ref{sec:arch}) far from settled --- the strongest current evidence is that hybrids
+help on long-range patterns \cite{restnet2025} while representation can matter more than the
+backbone \cite{alphavile2024}. Finally, the human side: trained on millions of professional
+moves, superhuman engines have been shown to \emph{expand} human play toward novel strategies
+\cite{novelty2023}, turning the engines into a tool for human discovery rather than only a
+benchmark to chase.
 
 \section{Outlook}
 The modern Go engine is a remarkably stable design: an AlphaZero-template network with
@@ -314,7 +391,8 @@ strong \emph{and} robust. The cyclic-attack literature suggests these last two g
 tension: self-play concentrates training data on the high-quality lines strong engines
 actually reach, so positions like the cyclic shape --- which a competent self-play opponent
 would never enter --- remain effectively out of distribution no matter how strong average
-play becomes, and an adversary trained explicitly to seek them out keeps finding the gap.
+play becomes, and an adversary trained explicitly to seek them out keeps finding a fresh
+exploit.
 Whether better coverage (adversarial or curriculum self-play), a longer-range architecture
 (Section~\ref{sec:arch}), or explicit certification (life-and-death solvers) is the right
 fix remains the field's most interesting open problem.
@@ -353,7 +431,7 @@ fix remains the field's most interesting open problem.
 
 \bibitem{minizero2024} T.~Wu \emph{et al.},
   ``MiniZero: Comparative analysis of AlphaZero and MuZero on Go, Othello, and Atari
-  games,'' \emph{IEEE Transactions on Games}, 2024. arXiv:2310.11305.
+  games,'' \emph{IEEE Transactions on Games}, 2025. arXiv:2310.11305.
   \url{https://arxiv.org/abs/2310.11305}
 
 \bibitem{demystifymuzero2024} H.~Guei \emph{et al.},
@@ -410,7 +488,7 @@ fix remains the field's most interesting open problem.
   AlphaZero outperforms switching to transformers,'' 2024. arXiv:2304.14918.
   \url{https://arxiv.org/abs/2304.14918}
 
-\bibitem{chessformer2024} D.~Monroe and The Leela Chess Zero Team,
+\bibitem{chessformer2024} D.~Monroe and P.~A.~Chalmers,
   ``Mastering Chess with a Transformer Model,'' 2024. arXiv:2409.12272.
   \url{https://arxiv.org/abs/2409.12272}
 
@@ -456,7 +534,7 @@ fix remains the field's most interesting open problem.
   ``Leela Zero'' (open-source AlphaGo Zero reimplementation), 2017--.
   \url{https://github.com/leela-zero/leela-zero}
 
-\bibitem{sai2019} F.~Morandin, G.~Amato, M.~Gini, C.~Metta, M.~Parton, G.-C.~Pascutto,
+\bibitem{sai2019} F.~Morandin, G.~Amato, R.~Gini, C.~Metta, M.~Parton, G.-C.~Pascutto,
   ``SAI, a Sensible Artificial Intelligence that plays Go,'' \emph{IJCNN}, 2019.
   arXiv:1809.03928. \url{https://arxiv.org/abs/1809.03928}
 
@@ -516,7 +594,7 @@ fix remains the field's most interesting open problem.
 
 \bibitem{lndsolver2025} C.-C.~Shih \emph{et al.},
   ``A Study of Solving Life-and-Death Problems in Go Using Relevance-Zone-Based Solvers,''
-  \emph{IEEE Transactions on Games}, 2025. arXiv:2512.21365.
+  \emph{IEEE Transactions on Games}, 2026. arXiv:2512.21365.
   \url{https://arxiv.org/abs/2512.21365}
 
 \bibitem{llmplanning2025} J.~Schultz \emph{et al.},
@@ -530,6 +608,87 @@ fix remains the field's most interesting open problem.
 \bibitem{interpchess2024} E.~Jenner \emph{et al.},
   ``Evidence of Learned Look-Ahead in a Chess-Playing Neural Network,'' 2024.
   arXiv:2406.00877. \url{https://arxiv.org/abs/2406.00877}
+
+\bibitem{deepblue2002} M.~Campbell, A.~J.~Hoane~Jr., F.-h.~Hsu,
+  ``Deep Blue,'' \emph{Artificial Intelligence} \textbf{134}(1--2), 57--83 (2002).
+  \url{https://doi.org/10.1016/S0004-3702(01)00129-1}
+
+\bibitem{tdgammon1995} G.~Tesauro,
+  ``Temporal Difference Learning and TD-Gammon,''
+  \emph{Communications of the ACM} \textbf{38}(3), 58--68 (1995).
+  \url{https://doi.org/10.1145/203330.203343}
+
+\bibitem{uct2006} L.~Kocsis and C.~Szepesv\'ari,
+  ``Bandit Based Monte-Carlo Planning,'' \emph{ECML}, 2006.
+  \url{https://doi.org/10.1007/11871842_29}
+
+\bibitem{rave2007} S.~Gelly and D.~Silver,
+  ``Combining Online and Offline Knowledge in UCT,'' \emph{ICML}, 2007.
+  \url{https://doi.org/10.1145/1273496.1273531}
+
+\bibitem{mctssurvey2012} C.~Browne \emph{et al.},
+  ``A Survey of Monte Carlo Tree Search Methods,''
+  \emph{IEEE Transactions on Computational Intelligence and AI in Games} \textbf{4}(1),
+  1--43 (2012). \url{https://doi.org/10.1109/TCIAIG.2012.2186810}
+
+\bibitem{dqn2015} V.~Mnih \emph{et al.},
+  ``Human-level control through deep reinforcement learning,''
+  \emph{Nature} \textbf{518}, 529--533 (2015).
+  \url{https://doi.org/10.1038/nature14236}
+
+\bibitem{a3c2016} V.~Mnih \emph{et al.},
+  ``Asynchronous Methods for Deep Reinforcement Learning,'' \emph{ICML}, 2016.
+  arXiv:1602.01783. \url{https://arxiv.org/abs/1602.01783}
+
+\bibitem{ppo2017} J.~Schulman, F.~Wolski, P.~Dhariwal, A.~Radford, O.~Klimov,
+  ``Proximal Policy Optimization Algorithms,'' 2017. arXiv:1707.06347.
+  \url{https://arxiv.org/abs/1707.06347}
+
+\bibitem{alphastar2019} O.~Vinyals \emph{et al.},
+  ``Grandmaster level in StarCraft II using multi-agent reinforcement learning,''
+  \emph{Nature} \textbf{575}, 350--354 (2019).
+  \url{https://doi.org/10.1038/s41586-019-1724-z}
+
+\bibitem{openaifive2019} C.~Berner \emph{et al.} (OpenAI),
+  ``Dota 2 with Large Scale Deep Reinforcement Learning,'' 2019. arXiv:1912.06680.
+  \url{https://arxiv.org/abs/1912.06680}
+
+\bibitem{alphagateau2024} T.~Rigaux and H.~Kashima,
+  ``Enhancing Chess Reinforcement Learning with Graph Representation'' (AlphaGateau),
+  \emph{NeurIPS}, 2024. arXiv:2410.23753. \url{https://arxiv.org/abs/2410.23753}
+
+\bibitem{efficientzero2021} W.~Ye, S.~Liu, T.~Kurutach, P.~Abbeel, Y.~Gao,
+  ``Mastering Atari Games with Limited Data'' (EfficientZero), \emph{NeurIPS}, 2021.
+  arXiv:2111.00210. \url{https://arxiv.org/abs/2111.00210}
+
+\bibitem{efficientzerov2} S.~Wang \emph{et al.},
+  ``EfficientZero V2: Mastering Discrete and Continuous Control with Limited Data,''
+  \emph{ICML}, 2024. arXiv:2403.00564. \url{https://arxiv.org/abs/2403.00564}
+
+\bibitem{athenan2023} Q.~Cohen-Solal and T.~Cazenave,
+  ``Minimax Strikes Back'' (Athénan / Descent self-play), 2023. arXiv:2012.10700.
+  \url{https://arxiv.org/abs/2012.10700}
+
+\bibitem{qzero2026} Z.~Liu and J.~Wang,
+  ``Mastering the Game of Go with Self-play Experience Replay'' (QZero), 2026.
+  arXiv:2601.03306. \url{https://arxiv.org/abs/2601.03306}
+
+\bibitem{vit2021} A.~Dosovitskiy \emph{et al.},
+  ``An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale'' (ViT),
+  \emph{ICLR}, 2021. arXiv:2010.11929. \url{https://arxiv.org/abs/2010.11929}
+
+\bibitem{polygames2020} T.~Cazenave \emph{et al.},
+  ``Polygames: Improved Zero Learning,'' \emph{ICGA Journal}, 2020. arXiv:2001.09832.
+  \url{https://arxiv.org/abs/2001.09832}
+
+\bibitem{interpgo2023} H.~Zhou \emph{et al.},
+  ``Explaining How a Neural Network Plays the Go Game,'' 2023. arXiv:2310.09838.
+  \url{https://arxiv.org/abs/2310.09838}
+
+\bibitem{novelty2023} M.~Shin, J.~Kim, B.~van~Opheusden, T.~L.~Griffiths,
+  ``Superhuman Artificial Intelligence Can Improve Human Decision Making by Increasing
+  Novelty,'' \emph{PNAS} \textbf{120}(12), 2023.
+  \url{https://doi.org/10.1073/pnas.2214840120}
 
 \end{thebibliography}
 
