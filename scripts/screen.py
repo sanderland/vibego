@@ -120,8 +120,21 @@ def _scale3():
     return [("s2_dw7pat600", "b7c106nbt-pat", "data", m)]
 
 
+def _seed_var():
+    # Seed-variance replicates at scale (300sh/30k): quantifies run-to-run noise for the val/Elo
+    # deltas we triage on (queued stats item), AND replicates the b10 pattern A/B at seed 2
+    # (s1: +8.6±7.5 sL, suggestive only). Compare vs the seed-1 rows s_dw7 / s_b10nbt / s1_b10pat.
+    m = ["--optimizer", "muon", "--lr", "0.04", "--seed", "2"]
+    return [
+        ("s3_dw7_sd2", "b7c106nbt", "train", m),
+        ("s3_b10nbt_sd2", "b10c128nbt", "train", m),
+        ("s3_b10pat_sd2", "b10c128nbt-pat", "train", m),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
-           "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3()}
+           "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
+           "s3": _seed_var()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
