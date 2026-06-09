@@ -1,11 +1,15 @@
 """Inference cost of a nanogo net: parameter count and FLOPs/eval (batch=1).
 
-We count MACs with forward hooks on the only FLOP-heavy layers — nn.Conv2d and
-nn.Linear — so any block type (regular / gpool / nbt) is handled without
-hardcoding the trunk shape. BatchNorm2d is skipped: it's an affine
-per-element op (a few elementwise mul/adds), tiny next to the convs and fused
-into the preceding conv at inference time anyway. FLOPs = 2 * MACs (one
-multiply + one add per MAC), the usual convention.
+We count FLOPs by **dispatch** (torch FlopCounterMode), not forward hooks: the
+counter tallies every FLOP-heavy aten op — conv *and* the matmul/einsum/bmm in
+attention blocks — so any block type (regular / gpool / nbt / linattn / rwkv)
+is handled without hardcoding the trunk. A hook-on-Conv2d/Linear counter would
+silently miss linattn's attention einsums (undercount of ~7-18 MFLOP at our
+sizes) — exactly the honesty check experiments/IDEAS.md demands. Elementwise
+ops (BatchNorm, relu, the rwkv WKV softmax-pool) are not counted: they're tiny
+next to the matmuls and BN fuses into the preceding conv at inference anyway.
+get_total_flops() already returns 2 * MACs (one multiply + one add per MAC),
+the usual convention; we derive macs = flops // 2 for the report.
 
 CLI:  python -m nanogo.net.flops [arch ...]   (defaults to every arch in ARCHS)
 """
@@ -15,56 +19,24 @@ import argparse
 import dataclasses
 
 import torch
-import torch.nn as nn
+from torch.utils.flop_counter import FlopCounterMode
 
 from .model import ARCHS, Model, ModelConfig, arch_config
 
 
-def _conv_macs(module: nn.Conv2d, out: torch.Tensor) -> int:
-    """MACs for one conv = out_elements * (in_channels/groups) * kh * kw."""
-    out_elems = out.numel()  # B * out_channels * H_out * W_out
-    kh, kw = module.kernel_size
-    in_per_group = module.in_channels // module.groups
-    return out_elems * in_per_group * kh * kw
-
-
-def _linear_macs(module: nn.Linear, out: torch.Tensor) -> int:
-    """MACs for a linear = out_elements * in_features (per output element we
-    do a length-in_features dot product). out.numel() already folds in batch."""
-    return out.numel() * module.in_features
-
-
 def count_flops_params(cfg: ModelConfig, board: int = 19) -> dict:
-    """Build Model(cfg with pos_len=board), run one batch=1 CPU forward under
-    no_grad while hooks tally MACs, and report params / macs / flops."""
+    """Build Model(cfg with pos_len=board), run one batch=1 CPU forward under a
+    FlopCounterMode (and no_grad), and report params / macs / flops."""
     cfg = dataclasses.replace(cfg, pos_len=board)
     model = Model(cfg).eval()
-
-    macs = 0
-
-    def hook(module, inputs, output):
-        nonlocal macs
-        if isinstance(module, nn.Conv2d):
-            macs += _conv_macs(module, output)
-        elif isinstance(module, nn.Linear):
-            macs += _linear_macs(module, output)
-
-    handles = [
-        m.register_forward_hook(hook)
-        for m in model.modules()
-        if isinstance(m, (nn.Conv2d, nn.Linear))
-    ]
-    try:
-        spatial = torch.zeros(1, cfg.num_spatial, board, board)
-        glob = torch.zeros(1, cfg.num_global)
-        with torch.no_grad():
-            model(spatial, glob)
-    finally:
-        for h in handles:
-            h.remove()
-
+    spatial = torch.zeros(1, cfg.num_spatial, board, board)
+    glob = torch.zeros(1, cfg.num_global)
+    fc = FlopCounterMode(display=False)
+    with fc, torch.no_grad():
+        model(spatial, glob)
+    flops = int(fc.get_total_flops())
     params = sum(p.numel() for p in model.parameters())
-    return {"params": int(params), "macs": int(macs), "flops": int(2 * macs)}
+    return {"params": int(params), "macs": flops // 2, "flops": flops}
 
 
 def arch_flops(name: str, board: int = 19) -> dict:
