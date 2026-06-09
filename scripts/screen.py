@@ -76,7 +76,22 @@ def _recipe():
     ]
 
 
-BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe()}
+def _arch_broad():
+    # Broad arch screen under the recipe winner (Muon lr 0.04). dw7=t_muon_lr04 is the reference.
+    # Same-FLOP A/Bs: globmod vs gpool (richer global conn), {gpool,nbt}-pat vs {gpool,nbt} (pattern
+    # memory). rwkv/linat = the parked linear mixers (cheap keep/reject signal). 10b points for the
+    # FLOP-scaling axis. Val-loss triage -> survivors go to Stage-B Elo (the verdict).
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [(f"g_{n}", a, "arch", m) for n, a in [
+        ("gpool", "b6c96-gpool"), ("nbt", "b6c96nbt"),
+        ("globmod", "b6c96-globmod"), ("gpoolpat", "b6c96-gpool-pat"), ("nbtpat", "b6c96nbt-pat"),
+        ("rwkv", "b6c96-rwkv"), ("linat", "b6c96-linat"),
+        ("globmod10", "b10c128-globmod"), ("b10nbt", "b10c128nbt"),
+    ]]
+
+
+BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
+           "a2": _arch_broad()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
