@@ -88,6 +88,10 @@ Ranked within each bucket; everything here is **speculative until A/B'd** per th
   gpool 1.090M / 774). Tests + 120-step CPU smoke pass (eval total 5.02→4.24). **Next:** speed-matched
   arena vs `gpool`/`nbt` on RunPod. (This is the *cheap, low-rank* realization — NOT the dense 361²
   attention-bias, which doesn't scale; see caveat.)
+- **External evidence (go-ai-survey):** RestNet finds conv+attention **hybrids help specifically on
+  long-range patterns** (`restnet2025`) — validates the interspersed-global-block design (globmod/
+  attention among conv blocks, vs pure-attention) and says *where* to look for the win in the arena:
+  ladders / long-range life-and-death, not the average position.
 - **What:** Lc0's *smolgen* compresses the whole board to a small global summary vector, then a tiny
   per-block dense map turns that into a **content-dependent additive bias on the attention/mixing**
   ("plays ~50% larger for ~10% throughput"). The transferable core: a 361→d bottleneck summary that
@@ -110,6 +114,10 @@ Ranked within each bucket; everything here is **speculative until A/B'd** per th
   (eval total 4.71→4.08). **Next:** arena A/B vs the base arch (does the stored pattern memory buy
   Elo?); then step 2 = **5×5/diamond hashed** window (where it should beat the multi-conv receptive
   field). off-board is padded as empty in this v1 (edge info still comes from the on-board channel).
+- **External evidence (go-ai-survey):** AlphaVile finds **representation matters more than the
+  backbone** (`alphavile2024`) — the strongest outside support for spending effort on *what the net
+  sees* (this lookup, the feature subset) over trunk-block A/Bs, and a caution on how much Elo to
+  expect from globmod/linat/rwkv vs gpool. Treat this as the highest-priority of the implemented archs.
 - **What:** per cell, map its local N×N (or diamond) configuration to an id and look up a learned
   d-dim embedding; scatter-add into the stem. This is NNUE's first layer (sparse-feature → weight
   column = a memory gather, ~0 MACs) and the classical MoGo/Zen 3×3-pattern table, generalized.
@@ -152,6 +160,10 @@ Ranked within each bucket; everything here is **speculative until A/B'd** per th
 - **Test:** swap the conv policy head for key-dot, speed-matched; measure policy top-1/KL vs teacher +
   arena Elo at 50–150 visits. **Caveat:** drop chess's from→to/promotion machinery (Go move = a point);
   a single global query may underfit local tactics — may need a few query channels or a residual conv logit.
+- **External evidence (go-ai-survey):** Chessformer / chessbench train **transformer policies by pure
+  supervised learning on static game positions** (`chessformer2024`, `chessbench2024`) — i.e. exactly
+  our distillation regime (SL from a static teacher). De-risks both this head and the transformer-trunk
+  path (ROADMAP #6): no online self-play needed to train an attention policy well.
 
 #### Score-gated auxiliary selection utility (Lc0 moves-left analogue)
 - **What:** Lc0's moves-left head adds a Q-gated utility ("when clearly winning, prefer shorter lines").
@@ -217,6 +229,19 @@ Ranked within each bucket; everything here is **speculative until A/B'd** per th
 - **Test:** filter on `|v_raw−v_search|>τ` + resample to a margin histogram; compare student value/score
   MAE + calibration. **Caveat:** thresholds are chess-specific (retune); over-filtering removes the hard
   positions the student most needs — test both directions.
+
+#### Reanalysis — re-label the distill set as the teacher/student improves (EfficientZero/ReZero)
+- **What:** MuZero-lineage sample-efficiency lever (go-ai-survey): **EfficientZero**'s self-supervised
+  consistency loss and **ReZero**'s backward-view *reanalysis* both squeeze more out of fixed data by
+  recomputing targets (`efficientzero2021`, `rezero2024`). Our analogue: as the teacher improves (or
+  the 75G relabel finishes / a stronger teacher lands), **re-relabel** existing positions rather than
+  only collecting new ones — and consider a consistency loss between a position and its post-move
+  successor's predicted value.
+- **Why for us:** distillation is already our most data-efficient lever (~70× vs npz outcomes); reanalysis
+  compounds it — more Elo per GB of relabel compute, which is the actual bottleneck on RunPod.
+- **Test:** relabel a slice with teacher vN+1, retrain, compare to training on the vN labels at equal
+  positions. **Caveat:** reanalysis pays off most when targets are still moving (early teacher / active
+  self-play); for a frozen strong teacher it reduces to "use the best teacher once."
 
 #### Terminal-anchored targets (Seer's EGTB idea, Go-native)
 - **What:** near game end, blend in **exact** ground truth instead of teacher logits — Tromp-Taylor
