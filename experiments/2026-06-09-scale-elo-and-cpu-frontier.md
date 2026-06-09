@@ -124,6 +124,11 @@ s1 = s1_dw7pat, s1_b10pat, s1_dw7f19 (300sh/30k, concurrency 3); s2 = s2_dw7pat6
 (600sh/60k, `scale600/` symlink subset — val shards 0–3 identical to `scale/`). 6h check-in
 cron armed: Stage-B on completion, registry/notes/plot updates, user report.
 
+**s2 val landed (23:26, 5.8 it/s — 60k steps in 2.9h):** dw7pat 2.952 (300sh/30k) →
+**2.879 (600sh/60k)**, same val shards — **scaling still not bent**, and a 759-MFLOP net now
+matches the 1567-MFLOP s_b10nbt's val (2.878). Stage-B Elo running. s3 seed-variance batch
+(dw7/b10nbt/b10pat at seed 2, 300sh/30k) training concurrently.
+
 ## Next (s1 batch, queued)
 
 `screen.py --batch s1 --data /workspace/distill/scale --steps 30000`: s1_dw7pat
