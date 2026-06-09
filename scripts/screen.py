@@ -48,7 +48,20 @@ def _arch_axis():  # fixed optimizer (AdamW) so arch is the only lever; comparab
     ]]
 
 
-BATCHES = {"a0": _train_axis() + _arch_axis()}
+def _arch_muon():
+    # Stage-A round 2: arch axis under the Stage-A-winning optimizer (Muon lr 0.04). dw7+Muon is
+    # already in the registry as t_muon_lr04, so it's the reference here. Includes the new global-
+    # mixing blocks (rwkv/linattn) vs the gpool/nbt baselines — the "richer global connection" probe.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [(f"m_{n}", a, "arch", m) for n, a in [
+        ("old6b", "b6c96-gpool"), ("nbt6b", "b6c96nbt"), ("dw8", "b8c102nbt"),
+        ("dw9", "b9c92nbt"), ("dw10", "b10c88nbt"), ("b10nbt", "b10c128nbt"),
+        ("rwkv6", "b6c96-rwkv"), ("linat6", "b6c96-linat"),
+        ("rwkv10", "b10c128-rwkv"), ("linat10", "b10c128-linat"),
+    ]]
+
+
+BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
