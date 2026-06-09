@@ -88,6 +88,7 @@ def read_batches(
     seed: int = 0,
     shuffle_buffer: int = 20000,
     drop_last: bool = True,
+    prefetch_ahead: int = 128,
 ):
     """Stream batches with a shuffle buffer (archive npz files hold only ~25 rows each, and
     rows within a file are correlated, so we accumulate and shuffle before batching).
@@ -119,7 +120,7 @@ def read_batches(
             pending[c] = [arrays[c][leftover]] if len(leftover) else []
         count = len(leftover)
 
-    for spatial, glob, policy, gt, own in _prefetch(npz_files, pos_len):
+    for spatial, glob, policy, gt, own in _prefetch(npz_files, pos_len, ahead=prefetch_ahead):
         for c, a in zip(cols, (spatial, glob, policy, gt, own)):
             pending[c].append(a)
         count += spatial.shape[0]
