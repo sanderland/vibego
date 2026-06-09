@@ -19,12 +19,22 @@ dated files for full detail.
 - **policy_eval (raw-net agreement) does NOT predict game strength.** Against a *neutral* judge
   (zhizi/b40, fixing the old b18-teacher bias) our net's raw outputs ≈ b6c96 — yet it loses ~150
   Elo in games. Judge net quality by the **arena**, not policy_eval.
-- **Project goal: the FLOPs↔Elo Pareto frontier of small nets** ([ROADMAP](ROADMAP.md)). First plane
-  ([2026-06-08-d](2026-06-08-flops-elo-frontier.md)): **`dw7` (b7c106nbt, depth ~7) is the small-net
-  champion** (on both the FLOPs and CPU-ms frontiers). **FLOPs flatters nbt** (~1.4× FLOP-inefficient
-  on CPU, ~1.9× on MPS) — so FLOPs is a *better* wall-clock proxy on CPU than GPU, but on real CPU
-  **`old10b` dominates `nbt10b`** (equal Elo, faster): the axis choice flips the 10b pick. Report Elo
-  vs **both** FLOPs and CPU-ms. (All 8k-step undertrained; relative frontier, not absolute strength.)
+- **Project goal: the FLOPs↔Elo Pareto frontier of small nets in the b6–b10 range** ([ROADMAP](ROADMAP.md)),
+  with single-thread CPU-ms as the second cost axis (in-browser engine target). Report Elo vs **both**.
+  Current frontier ([2026-06-09-d](2026-06-09-scale-elo-and-cpu-frontier.md)): **dw7 (b7c106nbt) and
+  b6c96nbt-pat tie at Elo −124** vs the b6c96 anchor (300sh/30k, paired scoreLead −25.8 / −32.6),
+  pattern cheaper by 35% FLOPs; **s1 combos (dw7+pat, b10+pat) queued**.
+- **pattern_embed (3×3 canonical lookup table) is a decisive Elo win at data scale** at ~0 FLOPs /
+  ~2% CPU-ms (−48.6 → −32.6 paired scoreLead vs identical-FLOPs base). At 48-shard screen scale it
+  looked like a −669 disaster — **small-data screens can flip the sign of memory-heavy archs**.
+- **Data+steps scaling converts directly into Elo, no bend yet** (dw7 −417 → −124 going 48sh/8k →
+  300sh/30k; only 2.5M of 44M positions used). Keep scaling before spending on new data (but see
+  the off-policy gate in [2026-06-09-c](2026-06-09-data-distribution-and-stats.md)).
+- **Muon (lr 0.04, the peak) beats AdamW by ~0.09 val-loss** arch-independently → screening recipe.
+- **FLOPs→CPU-ms is tier-dependent** (clean min-of-iters bench, 1 thread): nbt's −28% FLOPs ≈ −2%
+  CPU at 6b but a real −17% at 10b; depth costs wall-clock at matched FLOPs (the CPU frontier
+  prefers shallower-wider than the FLOPs frontier); linat/rwkv are the fastest 6b trunks per ms
+  (no val win though). Timing rule: **min-of-iters, never mean** — contention inflates mean ~2×.
 - **Harness lesson from actually running the arena:** the real bug was **deterministic self-play**
   (genmove always plays the top move → identical games per colour) → fixed with **randomized
   openings** in `vs.py`/`match.py` (`tests/test_vs.py`). A separate "engine crash" during intrinsic
