@@ -96,3 +96,6 @@ katago_cuda128/
 
 # local agent state
 .claude/
+
+# macOS
+.DS_Store

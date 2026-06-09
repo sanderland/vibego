@@ -13,8 +13,21 @@ dated files for full detail.
   White-to-move node sign-flipped. It read as a −57 gap and survived a long tuning progression.
   A deterministic node-by-node trace (`trace_search.py`) caught it in minutes. **Always validate
   the harness with a node-level trace before trusting an aggregate tuning curve.**
-- **The in-game gap to b6c96 is the NET, not the search.** So the path to a stronger engine is a
-  stronger net.
+- **The in-game gap to b6c96 is the NET, not the search.** Quantified: distill_1m vs b6c96 arena
+  = **−33.4 ± 6.2, 18.8% win, Elo −255** — holding search ≈ constant (parity −104), the net costs
+  ~150 Elo in games. This is the **acceptance baseline** the 75G distill net must beat.
+- **policy_eval (raw-net agreement) does NOT predict game strength.** Against a *neutral* judge
+  (zhizi/b40, fixing the old b18-teacher bias) our net's raw outputs ≈ b6c96 — yet it loses ~150
+  Elo in games. Judge net quality by the **arena**, not policy_eval.
+- **Project goal: the FLOPs↔Elo Pareto frontier of small nets** ([ROADMAP](ROADMAP.md)). First plane
+  ([2026-06-08-d](2026-06-08-flops-elo-frontier.md)): **`dw7` (b7c106nbt, depth ~7) is the small-net
+  champion** (on both the FLOPs and CPU-ms frontiers). **FLOPs flatters nbt** (~1.4× FLOP-inefficient
+  on CPU, ~1.9× on MPS) — so FLOPs is a *better* wall-clock proxy on CPU than GPU, but on real CPU
+  **`old10b` dominates `nbt10b`** (equal Elo, faster): the axis choice flips the 10b pick. Report Elo
+  vs **both** FLOPs and CPU-ms. (All 8k-step undertrained; relative frontier, not absolute strength.)
+- **Two harness bugs found & fixed by actually running the arena:** (1) deterministic self-play
+  (genmove always plays the top move → identical games) → **randomized openings** in `vs.py`/
+  `match.py` (`tests/test_vs.py`); (2) `policy_eval` send-all-then-read **deadlock** → chunked.
 - **Distillation (logit-forcing from b18) is ~70× more data-efficient** than supervised training
   on npz game outcomes, and gives much better-calibrated value/score/ownership. 0.10M b18-labeled
   positions ≈ 7.4M supervised positions against b6c96.
@@ -33,14 +46,24 @@ dated files for full detail.
 
 ## Things to try / implement (priority order)
 
+> **The canonical prioritized backlog is now [ROADMAP.md](ROADMAP.md)** (FLOPs↔Elo frontier goal,
+> Parameter-Golf borrows, transformer/Muon/weight-tying, etc.). The list below is the older
+> net-quality thread, still valid.
+>
+> **Open harness bug:** `run_engine` crashes on some npz-reconstructed positions ("teacher engine
+> closed") — blocks intrinsic `policy_eval` of our nets. Fix engine robustness on edge-case positions.
+
 1. **Make our own distilled net beat b6c96** — the main open goal now that search is solved.
    The in-game gap is the net. Levers below feed this.
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
    run. Scale the b18-relabeled set well past 1M positions; train longer. (Open — most promising.)
 3. **Teacher ensembling** — average b18 + b28 + b40 soft policies (still 1 visit) as a
    higher-quality distillation target than any single teacher's searched policy. (Open.)
-4. **nbt blocks** (nested bottleneck) — more strength per parameter; add a `b6c128nbt`-style arch
-   to the registry and compare at equal param count. (Open.)
+4. **nbt blocks** (nested bottleneck) — **DONE: `NBTResBlock` + a 6b/10b/15b ladder added to the
+   registry** (`b6c96nbt` 0.80M, `b10c128nbt` 2.21M, `b15c192nbt` 7.41M; old `b15c192-gpool` 10.35M
+   added too). Ready to train and compare at equal param count once the 75G data lands. Sequence
+   *after* the data-scale result so arch doesn't confound it. **`b6c96nbt` is the in-browser/wasm
+   pick** (0.56 GFLOP/eval, ~0.8 MB int8).
 5. **Features 18/19 (pass-alive / territory)** — cheap to add (reuse the area flood-fill), the
    one meaningful omission from our 14-channel subset. Ablate its effect on strength/calibration.
 6. **Use `scripts/match.py` for net-vs-net Elo** too (it already does command-engine arenas);
@@ -53,4 +76,5 @@ dated files for full detail.
 - `scripts/trace_search.py` — deterministic batch=1 node-by-node search trace for harness
   validation / debugging selection.
 - `scripts/policy_eval.py` — raw net agreement (policy/winrate/score/ownership) vs a reference.
+  Use the **neutral** zhizi/b40 as `--ref` (not b18, our teacher). NB: raw agreement ≠ game strength.
 - `nanogo/engine/proxy.py` — run our MCTS on an external KataGo net (search-isolation test).

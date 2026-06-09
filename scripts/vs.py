@@ -28,8 +28,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import random
+
 from nanogo.eval.selfplay import area_score
-from nanogo.go.board import BLACK, WHITE, Board, gtp_to_xy
+from nanogo.go.board import BLACK, WHITE, Board, gtp_to_xy, xy_to_gtp
+
+
+def random_opening(size: int, plies: int, seed: int):
+    """Distinct random opening stones (alternating B, W, ...) in the 3rd-line-and-inward region,
+    seeded so a given seed always yields the SAME opening. Two deterministic engines otherwise
+    replay one identical game per colour assignment, so the arena needs diverse forced openings
+    (and a color-reversed pair sharing a seed keeps it balanced)."""
+    rng = random.Random(seed)
+    region = [(x, y) for x in range(size) for y in range(size)
+              if min(x, size - 1 - x) >= 2 and min(y, size - 1 - y) >= 2]
+    rng.shuffle(region)
+    return [(BLACK if i % 2 == 0 else WHITE, region[i]) for i in range(min(plies, len(region)))]
 
 
 class Engine:
@@ -75,16 +89,20 @@ class Engine:
         self.proc.terminate()
 
 
-def play_once(black_cmd, white_cmd, args, judge):
+def play_once(black_cmd, white_cmd, args, judge, opening_seed=0):
     """Play one game; return (judge_or_area_score_BLACK_perspective, n_moves, finished)."""
     engines = {BLACK: Engine(black_cmd), WHITE: Engine(white_cmd)}
     names = {BLACK: "B", WHITE: "W"}
     board = Board(args.board, args.board)
     moves: list[list[str]] = []
+    opening_plies = getattr(args, "opening_plies", 0) or 0
+    for side, xy in random_opening(args.board, opening_plies, opening_seed):
+        board.play(side, xy)
+        moves.append([names[side], xy_to_gtp(xy, args.board)])
     max_moves = args.max_moves or args.board * args.board * 2
     passes = 0
     try:
-        for _ in range(max_moves):
+        for _ in range(max(0, max_moves - len(moves))):
             side = board.to_move
             mv = engines[side].genmove(moves, args.komi, args.board, args.visits)
             moves.append([names[side], mv])
@@ -114,6 +132,9 @@ def main():
     p.add_argument("--judge", default=None, help="neutral judge engine (e.g. a strong KataGo b18)")
     p.add_argument("--judge-visits", type=int, default=256)
     p.add_argument("--games", type=int, default=1, help="play N games, alternating colors")
+    p.add_argument("--opening-plies", type=int, default=8,
+                   help="forced random opening stones for game diversity (0 = deterministic)")
+    p.add_argument("--opening-seed", type=int, default=0)
     args = p.parse_args()
 
     judge = Engine(args.judge) if args.judge else None
@@ -122,7 +143,9 @@ def main():
         for g in range(args.games):
             a_black = (g % 2 == 0)
             bk, wh = (args.black, args.white) if a_black else (args.white, args.black)
-            score_b, nmoves, finished = play_once(bk, wh, args, judge)
+            # color-reversed pair (g, g+1) shares an opening seed → balanced
+            score_b, nmoves, finished = play_once(bk, wh, args, judge,
+                                                  opening_seed=args.opening_seed + g // 2)
             a = score_b if a_black else -score_b
             a_scores.append(a)
             tag = "finished" if finished else "cap"

@@ -90,6 +90,33 @@ class GPoolResBlock(nn.Module):
         return x + out
 
 
+class NBTResBlock(nn.Module):
+    """KataGo's nested bottleneck residual block (the `nbt` in b18c384nbt / b40c768nbt): a 1x1
+    bottleneck from c to bc channels, then two *nested* pre-activation 3x3 residual blocks run at
+    the reduced width bc, then a 1x1 projection back to c, all wrapped in an outer residual.
+    Four 3x3 convs at half-width cost ~the same as two at full width, so an nbt block buys more
+    conv depth (and the nesting) per parameter — that's why KataGo's strong nets are all nbt."""
+
+    def __init__(self, c: int, bc: int | None = None):
+        super().__init__()
+        bc = bc if bc is not None else c // 2
+        self.bn_in = nn.BatchNorm2d(c)
+        self.conv_in = nn.Conv2d(c, bc, 1, bias=False)
+        self.n1_bn1 = nn.BatchNorm2d(bc); self.n1_conv1 = nn.Conv2d(bc, bc, 3, padding=1, bias=False)
+        self.n1_bn2 = nn.BatchNorm2d(bc); self.n1_conv2 = nn.Conv2d(bc, bc, 3, padding=1, bias=False)
+        self.n2_bn1 = nn.BatchNorm2d(bc); self.n2_conv1 = nn.Conv2d(bc, bc, 3, padding=1, bias=False)
+        self.n2_bn2 = nn.BatchNorm2d(bc); self.n2_conv2 = nn.Conv2d(bc, bc, 3, padding=1, bias=False)
+        self.bn_out = nn.BatchNorm2d(bc)
+        self.conv_out = nn.Conv2d(bc, c, 1, bias=False)
+
+    def forward(self, x):
+        h = self.conv_in(Fnn.relu(self.bn_in(x)))
+        h = h + self.n1_conv2(Fnn.relu(self.n1_bn2(self.n1_conv1(Fnn.relu(self.n1_bn1(h))))))
+        h = h + self.n2_conv2(Fnn.relu(self.n2_bn2(self.n2_conv1(Fnn.relu(self.n2_bn1(h))))))
+        out = self.conv_out(Fnn.relu(self.bn_out(h)))
+        return x + out
+
+
 class Model(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -103,6 +130,8 @@ class Model(nn.Module):
                 blocks.append(ResBlock(c))
             elif kind == "gpool":
                 blocks.append(GPoolResBlock(c, config.gpool_channels))
+            elif kind == "nbt":
+                blocks.append(NBTResBlock(c))
             else:
                 raise ValueError(f"unknown block kind {kind!r}")
         self.blocks = nn.ModuleList(blocks)
@@ -155,15 +184,33 @@ class Model(nn.Module):
 # Add new named architectures here; train.py / arena.py select them by name. Global pooling
 # (and any future block type) lives entirely inside an arch's block_kinds, not as a global flag.
 
-def _kinds(n: int, gpool: bool = False) -> tuple[str, ...]:
-    return tuple("gpool" if (gpool and (i + 1) % 3 == 0) else "regular" for i in range(n))
+def _kinds(n: int, gpool: bool = False, base: str = "regular") -> tuple[str, ...]:
+    """n blocks of `base`, with every 3rd a (full-width) global-pooling block when gpool=True."""
+    return tuple("gpool" if (gpool and (i + 1) % 3 == 0) else base for i in range(n))
 
 
 ARCHS: dict[str, ModelConfig] = {
-    "b6c96":         ModelConfig(channels=96,  block_kinds=_kinds(6)),
-    "b6c96-gpool":   ModelConfig(channels=96,  block_kinds=_kinds(6, gpool=True)),
-    "b10c128":       ModelConfig(channels=128, block_kinds=_kinds(10)),
-    "b10c128-gpool": ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True)),
+    # --- classic g170-style ResNet ladder (regular blocks + interspersed gpool) ---
+    "b6c96":          ModelConfig(channels=96,  block_kinds=_kinds(6)),
+    "b6c96-gpool":    ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True)),
+    "b10c128":        ModelConfig(channels=128, block_kinds=_kinds(10)),
+    "b10c128-gpool":  ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True)),
+    "b15c192-gpool":  ModelConfig(channels=192, block_kinds=_kinds(15, gpool=True)),
+    # --- nested-bottleneck ladder (KataGo's nbt; every 3rd block a full-width gpool) ---
+    "b6c96nbt":       ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True, base="nbt")),
+    "b10c128nbt":     ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, base="nbt")),
+    "b15c192nbt":     ModelConfig(channels=192, block_kinds=_kinds(15, gpool=True, base="nbt")),
+    # nbt widened to ~match the param budget of the same-depth regular arch (bottleneck makes nbt
+    # smaller at equal b/c, so to spend the *same* params we widen): b6c112nbt≈b6c96-gpool (1.07 vs
+    # 1.09M), b10c152nbt≈b10c128-gpool (3.07 vs 3.12M). The fair "same budget, better block?" test.
+    "b6c112nbt":      ModelConfig(channels=112, block_kinds=_kinds(6,  gpool=True, base="nbt")),
+    "b10c152nbt":     ModelConfig(channels=152, block_kinds=_kinds(10, gpool=True, base="nbt")),
+    # depth-vs-width study, all nbt, every arch ~param-matched to old6b's ~1.09M budget: as depth
+    # grows the channel count shrinks to hold params fixed (b6c112 widest → b10c88 deepest).
+    "b7c106nbt":      ModelConfig(channels=106, block_kinds=_kinds(7,  gpool=True, base="nbt")),
+    "b8c102nbt":      ModelConfig(channels=102, block_kinds=_kinds(8,  gpool=True, base="nbt")),
+    "b9c92nbt":       ModelConfig(channels=92,  block_kinds=_kinds(9,  gpool=True, base="nbt")),
+    "b10c88nbt":      ModelConfig(channels=88,  block_kinds=_kinds(10, gpool=True, base="nbt")),
 }
 
 

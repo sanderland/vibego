@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
-from nanogo.net.model import ARCHS, GPoolResBlock, Model, ModelConfig, ResBlock, arch_config
+from nanogo.net.model import ARCHS, GPoolResBlock, Model, ModelConfig, NBTResBlock, ResBlock, arch_config
 
 
 def _block_types(config):
@@ -28,6 +28,29 @@ def test_gpool_arch_places_gpool_blocks():
     assert plain == ["ResBlock"] * 6
     assert gpool == ["ResBlock", "ResBlock", "GPoolResBlock",
                      "ResBlock", "ResBlock", "GPoolResBlock"]
+
+
+def test_nbt_arch_places_nbt_and_gpool_blocks():
+    nbt = _block_types(arch_config("b6c96nbt"))
+    assert nbt == ["NBTResBlock", "NBTResBlock", "GPoolResBlock",
+                   "NBTResBlock", "NBTResBlock", "GPoolResBlock"]
+
+
+def test_nbt_block_bottlenecks_and_is_residual():
+    # The 3x3 convs run at the bottleneck width (c//2), and a zero-input passes through the
+    # outer residual unchanged (a sanity check that it really is x + f(x)).
+    block = NBTResBlock(96).eval()
+    assert block.conv_in.out_channels == 48
+    assert block.n1_conv1.in_channels == 48 and block.n1_conv1.out_channels == 48
+    assert block.conv_out.out_channels == 96
+    x = torch.zeros(1, 96, 9, 9)
+    assert torch.allclose(block(x), x)
+
+
+def test_nbt_is_smaller_per_block_than_regular():
+    # The whole point of nbt: more conv depth per parameter -> fewer params at equal b/c label.
+    nparams = lambda name: sum(p.numel() for p in Model(arch_config(name)).parameters())
+    assert nparams("b6c96nbt") < nparams("b6c96-gpool")
 
 
 def test_unknown_arch_raises():

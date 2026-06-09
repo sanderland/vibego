@@ -68,6 +68,10 @@ def main():
     p.add_argument("--max-moves", type=int, default=200)
     p.add_argument("--judge", default=None, help="neutral judge (e.g. a strong KataGo b18)")
     p.add_argument("--judge-visits", type=int, default=256)
+    p.add_argument("--opening-plies", type=int, default=8,
+                   help="forced random opening stones for game diversity (0 = deterministic; "
+                        "needed when both engines are deterministic, e.g. nanogo-vs-nanogo)")
+    p.add_argument("--opening-seed", type=int, default=0)
     args = p.parse_args()
 
     judge = _LockedJudge(args.judge) if args.judge else None
@@ -76,7 +80,9 @@ def main():
     def play(g: int):
         a_black = (g % 2 == 0)
         bk, wh = (args.a, args.b) if a_black else (args.b, args.a)
-        score_b, nmoves, finished = play_once(bk, wh, args, judge)
+        # color-reversed pair (g, g+1) shares an opening seed → balanced
+        score_b, nmoves, finished = play_once(bk, wh, args, judge,
+                                              opening_seed=args.opening_seed + g // 2)
         a = score_b if a_black else -score_b  # A's perspective
         with print_lock:
             tag = "fin" if finished else "cap"

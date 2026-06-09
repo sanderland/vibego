@@ -25,21 +25,28 @@ import relabel  # noqa: E402  (reuse TeacherEngine + _row_query board reconstruc
 from nanogo.net import data as ndata  # noqa: E402
 
 
-def collect(engine_cmd, queries):
-    """Return per-position dicts: policy, winrate, score, ownership."""
+def collect(engine_cmd, queries, chunk=16):
+    """Return per-position dicts: policy, winrate, score, ownership.
+
+    Send/recv in small chunks: sending *all* queries before reading deadlocks for engines with
+    large responses (ours: 361 policy + 361 ownership floats per position) — the engine's stdout
+    pipe fills, it blocks on write and stops reading our stdin. Reading after each small chunk
+    keeps the pipe drained."""
     eng = relabel.TeacherEngine(engine_cmd)
     out = []
     try:
-        for q in queries:
-            eng.send(q)
-        for q in queries:
-            r = eng.recv(q["id"])
-            out.append({
-                "policy": np.asarray(r["policy"], dtype=np.float64),
-                "winrate": float(r["rootInfo"]["winrate"]),
-                "score": float(r["rootInfo"]["scoreLead"]),
-                "ownership": np.asarray(r.get("ownership", []), dtype=np.float64),
-            })
+        for i in range(0, len(queries), chunk):
+            batch = queries[i:i + chunk]
+            for q in batch:
+                eng.send(q)
+            for q in batch:
+                r = eng.recv(q["id"])
+                out.append({
+                    "policy": np.asarray(r["policy"], dtype=np.float64),
+                    "winrate": float(r["rootInfo"]["winrate"]),
+                    "score": float(r["rootInfo"]["scoreLead"]),
+                    "ownership": np.asarray(r.get("ownership", []), dtype=np.float64),
+                })
     finally:
         eng.close()
     return out
