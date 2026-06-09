@@ -29,7 +29,7 @@ WR_RE = re.compile(r"win rate:\s+([\d.]+)%")
 
 
 def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, workers, name):
-    a = f"uv run python scripts/run_engine.py -model {ckpt}"
+    a = f"uv run python scripts/run_engine.py -model {ckpt} -early-stop"  # safe locked-winner stop
     b = f"{KATAGO} analysis -model {anchor_model} -config {CFG}"
     judge = f"{KATAGO} analysis -model {judge_model} -config {CFG}"
     cmd = ["uv", "run", "python", "scripts/match.py",
