@@ -45,7 +45,7 @@ KNOWN_FIELDS = [
     "extra", "ts",
 ]
 REQUIRED_FIELDS = ("id", "axis", "arch")
-VALID_AXES = ("train", "arch", "search", "baseline")
+VALID_AXES = ("train", "arch", "search", "baseline", "data")
 VALID_STAGES = ("A", "B", "C")
 
 
