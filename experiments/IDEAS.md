@@ -25,7 +25,7 @@ show no clear win at our N=361, non-causal setting, so they're not near-term roa
 > linear-attention trunks only become interesting if N is *raised* (e.g. `ireg16` register tokens).
 
 ### RWKV-style linear token-mixing
-- **Status: IMPLEMENTED as a registry block kind (`rwkv`)** — `RWKVResBlock` in `nanogo/net/model.py`,
+- **Status: IMPLEMENTED as a registry block kind (`rwkv`)** — `RWKVResBlock` in `vibego/net/model.py`,
   archs `b6c96-rwkv` / `b10c128-rwkv` (regular conv backbone, every-3rd block = the rwkv mixer,
   swapping gpool's slot). Vision-RWKV-style (Duan et al. 2024): omnidirectional **token shift**
   (`_q_shift`) + a **non-causal global WKV** (per-channel softmax-over-board weighting of v by
@@ -51,7 +51,7 @@ show no clear win at our N=361, non-causal setting, so they're not near-term roa
 
 ### Linearized / kernel attention (Performer, linear attention, etc.)
 - **Status: IMPLEMENTED as a registry block kind (`linattn`)** — `LinAttnResBlock` in
-  `nanogo/net/model.py`, archs `b6c96-linat` / `b10c128-linat`. Multi-head linear attention with the
+  `vibego/net/model.py`, archs `b6c96-linat` / `b10c128-linat`. Multi-head linear attention with the
   φ=elu+1 feature map (Katharopoulos et al. 2020), pre-norm attention sublayer + squared-ReLU FFN,
   both residual; **no internal positional encoding** (permutation-equivariant → interspersed with
   conv blocks that supply position). Tests in `tests/test_archs.py`. **Next:** the honesty check

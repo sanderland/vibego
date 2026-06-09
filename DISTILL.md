@@ -1,6 +1,6 @@
 # Distilling more games on a remote pod
 
-How to scale up the b18 → nanogo distillation on a cloud GPU (e.g. RunPod). The student is
+How to scale up the b18 → vibego distillation on a cloud GPU (e.g. RunPod). The student is
 tiny; the point of the GPU is **fast KataGo teacher inference** (relabeling millions of
 positions) and fast training. See `experiments/SUMMARY.md` for why distillation is the path.
 
@@ -32,7 +32,7 @@ Smoke-test the orchestration first (CPU, no GPU/KataGo): `SMOKE=1 bash scripts/r
 ## 2. Step by step (if you want control)
 
 ```bash
-git clone -b dev https://github.com/sanderland/nanogo.git && cd nanogo
+git clone -b dev https://github.com/sanderland/nanogo.git && cd nanogo   # repo not yet renamed
 curl -LsSf https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
 uv sync --extra dev && uv run pytest -q          # katago-submodule tests skip; rest must pass
 

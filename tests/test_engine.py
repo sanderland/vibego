@@ -11,8 +11,8 @@ from dataclasses import asdict
 import pytest
 import torch
 
-from nanogo.go import features as F
-from nanogo.net.model import Model, ModelConfig
+from vibego.go import features as F
+from vibego.net.model import Model, ModelConfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

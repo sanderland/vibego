@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 import torch
 
-from nanogo.engine.search import MCTS, NNEvaluator
-from nanogo.go.board import BLACK, PASS, Board
-from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
+from vibego.engine.search import MCTS, NNEvaluator
+from vibego.go.board import BLACK, PASS, Board
+from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
 
 
 class _BoomModel(torch.nn.Module):

@@ -26,10 +26,10 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.common import get_device
-from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
-from nanogo.net.flops import count_flops_params
-from nanogo.net.model import Model, arch_config
+from vibego.common import get_device
+from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
+from vibego.net.flops import count_flops_params
+from vibego.net.model import Model, arch_config
 
 # The bake-off + depth-width nets, in the order we report them.
 DEFAULT = [
@@ -43,7 +43,7 @@ DEFAULT = [
 
 
 def count_flops(cfg) -> float:
-    """FLOPs for a single eval (batch=1), in MFLOP. Delegates to nanogo.net.flops (dispatch-based,
+    """FLOPs for a single eval (batch=1), in MFLOP. Delegates to vibego.net.flops (dispatch-based,
     single source of truth — counts conv *and* attention-einsum ops)."""
     return count_flops_params(cfg, board=cfg.pos_len)["flops"] / 1e6
 

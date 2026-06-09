@@ -12,7 +12,6 @@ neutral-judge evaluation, arenas with proper Elo, a search-isolation proxy, an i
 benchmark, and a dated lab notebook — all designed to be driven by a coding agent running and
 recording experiments.
 
-> The Python package is still imported as `nanogo` (rename deferred).
 
 It trains on real [katagoarchive.org](https://katagoarchive.org/) self-play data (no self-play
 generation of its own) and serves a JSON analysis engine that
@@ -22,15 +21,15 @@ generation of its own) and serves a JSON analysis engine that
 
 | Module | Role |
 |--------|------|
-| `nanogo/go/board.py` | Go board: stones, liberties, captures, simple ko, history |
-| `nanogo/go/features.py` | A subset of KataGo's V7 input features, decoded from `.npz` *and* recomputed from a board (validated to match KataGo's own encoder) — ablate by editing `SPATIAL_SUBSET` / `GLOBAL_SUBSET` |
-| `nanogo/net/model.py` | Pre-activation ResNet trunk (regular / global-pooling / **nested-bottleneck `nbt`** blocks) + policy / value / score / ownership heads, selected from an **`ARCHS` registry** |
-| `nanogo/net/data.py` | Streaming shuffle-buffer loader over archive `.npz` files |
-| `nanogo/net/losses.py` | Multi-head loss (policy CE, value CE, score Huber, ownership CE) |
-| `nanogo/engine/search.py` | Batched `NNEvaluator` + leaf-parallel (virtual-loss) PUCT MCTS, search decoupled from inference |
-| `nanogo/engine/analysis.py` | KataGo-compatible JSON analysis protocol (streaming, concurrent queries) |
-| `nanogo/engine/proxy.py` | Run our MCTS on an **external** KataGo net — isolates search quality from net quality |
-| `nanogo/eval/` | `selfplay.py` (+ Tromp-Taylor scoring), `elo.py` (Bayesian Elo w/ credible intervals), `arena.py` (round-robin) |
+| `vibego/go/board.py` | Go board: stones, liberties, captures, simple ko, history |
+| `vibego/go/features.py` | A subset of KataGo's V7 input features, decoded from `.npz` *and* recomputed from a board (validated to match KataGo's own encoder) — ablate by editing `SPATIAL_SUBSET` / `GLOBAL_SUBSET` |
+| `vibego/net/model.py` | Pre-activation ResNet trunk (regular / global-pooling / **nested-bottleneck `nbt`** blocks) + policy / value / score / ownership heads, selected from an **`ARCHS` registry** |
+| `vibego/net/data.py` | Streaming shuffle-buffer loader over archive `.npz` files |
+| `vibego/net/losses.py` | Multi-head loss (policy CE, value CE, score Huber, ownership CE) |
+| `vibego/engine/search.py` | Batched `NNEvaluator` + leaf-parallel (virtual-loss) PUCT MCTS, search decoupled from inference |
+| `vibego/engine/analysis.py` | KataGo-compatible JSON analysis protocol (streaming, concurrent queries) |
+| `vibego/engine/proxy.py` | Run our MCTS on an **external** KataGo net — isolates search quality from net quality |
+| `vibego/eval/` | `selfplay.py` (+ Tromp-Taylor scoring), `elo.py` (Bayesian Elo w/ credible intervals), `arena.py` (round-robin) |
 
 ### Experiment tooling (`scripts/`)
 
@@ -87,7 +86,7 @@ uv run python scripts/bench_net.py --device mps --batch-sizes 1,16
 
 ## Architectures
 
-Architectures live in the `ARCHS` registry in `nanogo/net/model.py` and are selected by name
+Architectures live in the `ARCHS` registry in `vibego/net/model.py` and are selected by name
 (`--arch`). Trunks are described by a list of `block_kinds` (`regular` / `gpool` / `nbt`), so new
 block types drop in without new config flags. The current ladder spans classic ResNet
 (`b6c96-gpool` … `b15c192-gpool`) and nested-bottleneck (`b6c96nbt` … `b15c192nbt`) families, plus

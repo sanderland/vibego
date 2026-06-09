@@ -40,7 +40,7 @@ def _panel(ax, rows, ykey, ylabel, maximize_y):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="experiments/frontier.png")
-    p.add_argument("--title", default="nanogo frontier")
+    p.add_argument("--title", default="vibego frontier")
     args = p.parse_args()
     rows = reg.read_rows()
     has_elo = any(isinstance(r.get("elo"), (int, float)) for r in rows)

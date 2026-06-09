@@ -12,7 +12,7 @@ the gap, and which KataGo search params close it?
 
 ## Setup
 
-- **Proxy** (`nanogo/engine/proxy.py`): our MCTS, but leaf evals come from an external KataGo
+- **Proxy** (`vibego/engine/proxy.py`): our MCTS, but leaf evals come from an external KataGo
   engine running b6c96 at 1 visit (raw net). So search algorithm is isolated — identical net.
 - **Measure**: `scripts/vs.py` / later `scripts/match.py` (b18 judge, 48 visits); per-move
   `scripts/move_eval.py`. Params stolen from `cpp/search/searchparams.cpp`,

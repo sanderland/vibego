@@ -1,4 +1,4 @@
-"""Serve a nanogo checkpoint as a KataGo-compatible JSON analysis engine.
+"""Serve a vibego checkpoint as a KataGo-compatible JSON analysis engine.
 
 KaTrain launches it like KataGo:  run_engine.py analysis -model CKPT -config CFG ...
 so we accept (and ignore) the KataGo-style flags we don't need.
@@ -8,7 +8,7 @@ Standalone:
     echo '{"id":"x","moves":[["B","Q16"]],"komi":7.5,"boardXSize":19,"boardYSize":19,"maxVisits":50,"includePolicy":true,"includeOwnership":true,"overrideSettings":{"reportAnalysisWinratesAs":"BLACK"}}' | uv run python scripts/run_engine.py -model checkpoints/depth6.pt
 
 KaTrain config: set the engine command (custom backend / altcommand) to:
-    uv run --project /path/to/nanogo python /path/to/nanogo/scripts/run_engine.py -model /path/to/checkpoint.pt
+    uv run --project /path/to/vibego python /path/to/vibego/scripts/run_engine.py -model /path/to/checkpoint.pt
 """
 from __future__ import annotations
 
@@ -20,10 +20,10 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.common import get_device
-from nanogo.engine.analysis import AnalysisEngine
-from nanogo.net.model import Model, ModelConfig
-from nanogo.engine.search import NNEvaluator
+from vibego.common import get_device
+from vibego.engine.analysis import AnalysisEngine
+from vibego.net.model import Model, ModelConfig
+from vibego.engine.search import NNEvaluator
 
 
 def parse_args():
@@ -62,15 +62,15 @@ def load_evaluator(path, device):
 def main():
     args = parse_args()
     if args.proxy:
-        from nanogo.engine.proxy import KataGoEvaluator
+        from vibego.engine.proxy import KataGoEvaluator
         evaluator = KataGoEvaluator(args.proxy)
         pos_len = args.pos_len
-        sys.stderr.write(f"nanogo: OUR search on proxy net [{args.proxy}]\n")
+        sys.stderr.write(f"vibego: OUR search on proxy net [{args.proxy}]\n")
     else:
         device = get_device(args.device)
         evaluator, config = load_evaluator(args.model, device)
         pos_len = config.pos_len
-        sys.stderr.write(f"nanogo: loaded {args.model} ({config}) on {device}\n")
+        sys.stderr.write(f"vibego: loaded {args.model} ({config}) on {device}\n")
     sys.stderr.flush()
     mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log}
     engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,

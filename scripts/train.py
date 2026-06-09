@@ -1,4 +1,4 @@
-"""Train a nanogo network on katagoarchive .npz data.
+"""Train a vibego network on katagoarchive .npz data.
 
 Example (depth-6 net):
     uv run python scripts/train.py --data data --blocks 6 --channels 96 \
@@ -17,10 +17,10 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.net import data
-from nanogo.common import get_device, set_seed, setup_logging
-from nanogo.net.losses import LossWeights, compute_losses
-from nanogo.net.model import ARCHS, Model, arch_config
+from vibego.net import data
+from vibego.common import get_device, set_seed, setup_logging
+from vibego.net.losses import LossWeights, compute_losses
+from vibego.net.model import ARCHS, Model, arch_config
 
 
 def parse_args():
@@ -79,7 +79,7 @@ def make_optimizer(model, args):
     """AdamW (default) or Muon-for-matrices + AdamW-for-scalars. Every group carries a `base_lr`
     that lr_frac scales each step."""
     if args.optimizer == "muon":
-        from nanogo.net.muon import make_muon_adamw
+        from vibego.net.muon import make_muon_adamw
         opt = make_muon_adamw(model, muon_lr=args.lr, scalar_lr=args.scalar_lr,
                               momentum=args.muon_momentum, weight_decay=args.weight_decay)
     else:
@@ -150,7 +150,7 @@ def main():
     print(f"optimizer={args.optimizer} ema={args.ema} weights={weights}")
     ema = None
     if args.ema > 0:
-        from nanogo.net.muon import ModelEMA
+        from vibego.net.muon import ModelEMA
         ema = ModelEMA(model, args.ema)
     start_step = 0
     if args.resume and os.path.exists(args.resume):
@@ -215,7 +215,7 @@ def _with_ema(ema, model, fn):
 
 
 def save(model, opt, config, step, out):
-    from nanogo.go import features as F
+    from vibego.go import features as F
     torch.save({
         "model": model.state_dict(),
         "optimizer": opt.state_dict(),

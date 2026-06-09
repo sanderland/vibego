@@ -10,9 +10,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.go.board import BLACK, Board, PASS, xy_to_gtp
-from nanogo.common import get_device
-from nanogo.engine.search import MCTS
+from vibego.go.board import BLACK, Board, PASS, xy_to_gtp
+from vibego.common import get_device
+from vibego.engine.search import MCTS
 
 # reuse the checkpoint loader
 from run_engine import load_evaluator  # type: ignore

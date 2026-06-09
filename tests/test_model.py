@@ -1,8 +1,8 @@
 import torch
 
-from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
-from nanogo.net.losses import LossWeights, compute_losses
-from nanogo.net.model import Model, ModelConfig
+from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
+from vibego.net.losses import LossWeights, compute_losses
+from vibego.net.model import Model, ModelConfig
 
 
 def _synthetic_batch(B, P, device):

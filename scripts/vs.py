@@ -1,17 +1,17 @@
 """Referee: play two KataGo-analysis-protocol engines against each other.
 
-Because nanogo's engine speaks the same JSON protocol as KataGo, this pits *any* two
-engines: nanogo vs nanogo, or nanogo vs the real KataGo binary (e.g. its b6c96 net).
+Because vibego's engine speaks the same JSON protocol as KataGo, this pits *any* two
+engines: vibego vs vibego, or vibego vs the real KataGo binary (e.g. its b6c96 net).
 Each engine computes its own input features internally, so feature differences don't matter.
 
 Examples:
-    # nanogo vs nanogo
+    # vibego vs vibego
     uv run python scripts/vs.py \
         --black "uv run python scripts/run_engine.py -model checkpoints/depth6.pt" \
         --white "uv run python scripts/run_engine.py -model checkpoints/untrained.pt" \
         --visits 64 --board 19
 
-    # nanogo toy vs real KataGo b6c96 (needs a katago binary + the b6c96 model)
+    # vibego toy vs real KataGo b6c96 (needs a katago binary + the b6c96 model)
     uv run python scripts/vs.py \
         --black "uv run python scripts/run_engine.py -model checkpoints/depth6.pt" \
         --white "katago analysis -model b6c96.bin.gz -config analysis.cfg" \
@@ -30,8 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import random
 
-from nanogo.eval.selfplay import area_score
-from nanogo.go.board import BLACK, WHITE, Board, gtp_to_xy, xy_to_gtp
+from vibego.eval.selfplay import area_score
+from vibego.go.board import BLACK, WHITE, Board, gtp_to_xy, xy_to_gtp
 
 
 def random_opening(size: int, plies: int, seed: int):

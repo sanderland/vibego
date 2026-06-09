@@ -2,7 +2,7 @@
 
 Distilled from KataGo Discord discussion (≈Aug 2024 → Jun 2026), mainly **lightvector** (David Wu,
 KataGo author) and **hzy_sigmoid** (trainer of the strong `zhizi`/`fdx6d` nets), with CCY and
-others. Captures the architecture frontier *past* the nbt nets that `nanogo` currently mirrors:
+others. Captures the architecture frontier *past* the nbt nets that `vibego` currently mirrors:
 the move toward **transformers**, **learnable RoPE**, and **nbt-transformer hybrids**. Treat
 numbers as informal lab notes, not a controlled paper.
 
@@ -145,19 +145,19 @@ rest is marginal."
 
 ---
 
-## Relevance to `nanogo`
+## Relevance to `vibego`
 
 - Our bake-off confirms the **nbt direction** at small scale (every nbt net beat its regular
   counterpart) — consistent with lightvector's "accept nbt." The doubled-trunk-channel intuition
   ("trunk channels are contested") is *why*, and matches our depth-vs-width study's premise.
-- **Two cheap, high-value things to consider adding** to nanogo's registry next, both flagged here
+- **Two cheap, high-value things to consider adding** to vibego's registry next, both flagged here
   as wins that are easy to implement: **learnable RoPE** (needs a transformer block first) and
   **inline registers / extra tokens** (worth ~1 block of value-loss for trivial cost).
-- **RMSNorm-over-BatchNorm** is a free swap worth trying — nanogo currently uses BatchNorm
+- **RMSNorm-over-BatchNorm** is a free swap worth trying — vibego currently uses BatchNorm
   throughout; lightvector reports RMSNorm is equal-or-better and avoids BatchNorm's batch coupling.
 - For honest comparisons, copy their **equal-inference-cost (not equal-param)** discipline and use
   **C++/real-backend timings**, not framework forward-pass times.
 - Bigger picture: a full **transformer + learnable-RoPE + nbt** trunk is the current KataGo
-  frontier; if nanogo ever moves past conv-nbt, `b9c768h12nbttflrs`-style is the reference recipe —
+  frontier; if vibego ever moves past conv-nbt, `b9c768h12nbttflrs`-style is the reference recipe —
   but note the gains over nbt are modest at equal inference cost and lean heavily on the **Muon
   optimizer** for early-training speed.

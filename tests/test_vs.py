@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import vs  # noqa: E402
 
-from nanogo.go.board import BLACK, WHITE  # noqa: E402
+from vibego.go.board import BLACK, WHITE  # noqa: E402
 
 
 def test_random_opening_seed_deterministic_and_distinct():

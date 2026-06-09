@@ -8,8 +8,8 @@ import random
 import numpy as np
 import pytest
 
-from nanogo.go import features as F
-from nanogo.go.board import BLACK, WHITE, Board, opp
+from vibego.go import features as F
+from vibego.go.board import BLACK, WHITE, Board, opp
 
 katago_board = pytest.importorskip("katago.game.board")
 katago_features = pytest.importorskip("katago.game.features")

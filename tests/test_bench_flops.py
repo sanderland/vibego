@@ -10,7 +10,7 @@ import bench_net  # noqa: E402
 import torch  # noqa: E402
 from torch.utils.flop_counter import FlopCounterMode  # noqa: E402
 
-from nanogo.net.model import LinAttnResBlock, arch_config  # noqa: E402
+from vibego.net.model import LinAttnResBlock, arch_config  # noqa: E402
 
 
 def test_count_flops_matches_hand_computed_conv_convention():

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Append-only results registry + Pareto-frontier tool for the nanogo study.
+"""Append-only results registry + Pareto-frontier tool for the vibego study.
 
 Pure bookkeeping. No training is run here. Stdlib + numpy only; matplotlib is
 optional and only used (guarded) when --plot is passed.
@@ -308,7 +308,7 @@ def cmd_pareto(args):
 
 def cmd_frontiers(args):
     rows = read_rows()
-    print("Canonical frontiers for the nanogo study.\n")
+    print("Canonical frontiers for the vibego study.\n")
     _run_pareto(rows, "flops", "val_loss", minimize_x=True, minimize_y=True,
                 plot=args.plot,
                 label="SCREENING frontier: flops (min) vs val_loss (min)")

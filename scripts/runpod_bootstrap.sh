@@ -5,7 +5,7 @@
 #   bash scripts/runpod_bootstrap.sh
 #
 # Everything is env-overridable (see CONFIG). Set SMOKE=1 for a tiny CPU end-to-end that needs
-# no GPU/KataGo/network (uses nanogo as its own teacher) — used to test this script in Docker:
+# no GPU/KataGo/network (uses vibego as its own teacher) — used to test this script in Docker:
 #   docker run --rm -i python:3.12-slim bash -c '...'   (see the repo for the exact command)
 set -euo pipefail
 log() { printf '\n=== %s ===\n' "$*"; }
@@ -45,7 +45,7 @@ uv run pytest -q
 
 # ---------------- SMOKE: tiny CPU end-to-end, no GPU/KataGo ----------------
 if [ "$SMOKE" = "1" ]; then
-  log "SMOKE: synth data + nanogo-as-teacher"
+  log "SMOKE: synth data + vibego-as-teacher"
   uv run python - <<'PY'
 import os, numpy as np, torch
 from dataclasses import asdict
@@ -58,22 +58,22 @@ for k in range(4):
     packed = np.packbits(full.reshape(8, 22, 361), axis=2)
     glob = np.zeros((8, 19), dtype=np.float32); glob[:, 5] = 7.5 / 20.0
     np.savez(f"smoke_data/s{k}.npz", binaryInputNCHWPacked=packed, globalInputNC=glob)
-from nanogo.net.model import Model, ModelConfig
-from nanogo.go import features as F
+from vibego.net.model import Model, ModelConfig
+from vibego.go import features as F
 cfg = ModelConfig.plain(8, 2); m = Model(cfg)
 torch.save({"model": m.state_dict(), "optimizer": {}, "model_config": asdict(cfg),
             "step": 0, "spatial_subset": F.SPATIAL_SUBSET, "global_subset": F.GLOBAL_SUBSET},
            "checkpoints/teacher_tiny.pt")
 print("synth ready")
 PY
-  log "SMOKE: relabel (teacher = nanogo)"
+  log "SMOKE: relabel (teacher = vibego)"
   uv run python scripts/relabel.py --src smoke_data --out smoke_distilled --n-files 4 --visits 1 \
     --teacher "uv run python scripts/run_engine.py -model checkpoints/teacher_tiny.pt -device cpu"
   log "SMOKE: train"
   uv run python scripts/train.py --data smoke_distilled --arch "$ARCH" --device cpu \
     --batch-size 16 --max-steps 30 --warmup 5 --eval-interval 20 --save-interval 30 \
     --val-files 1 --out checkpoints/smoke.pt
-  log "SMOKE: judge (nanogo vs nanogo)"
+  log "SMOKE: judge (vibego vs vibego)"
   uv run python scripts/vs.py \
     --black "uv run python scripts/run_engine.py -model checkpoints/smoke.pt -device cpu" \
     --white "uv run python scripts/run_engine.py -model checkpoints/teacher_tiny.pt -device cpu" \

@@ -1,5 +1,5 @@
 """The KataGoEvaluator proxy lets our MCTS run on an external engine's net. We test it using
-nanogo's own engine as the 'external' target (it speaks the same protocol), so no KataGo needed."""
+vibego's own engine as the 'external' target (it speaks the same protocol), so no KataGo needed."""
 import os
 import sys
 from dataclasses import asdict
@@ -7,11 +7,11 @@ from dataclasses import asdict
 import pytest
 import torch
 
-from nanogo.engine.proxy import KataGoEvaluator
-from nanogo.engine.search import MCTS
-from nanogo.go import features as F
-from nanogo.go.board import Board
-from nanogo.net.model import Model, ModelConfig
+from vibego.engine.proxy import KataGoEvaluator
+from vibego.engine.search import MCTS
+from vibego.go import features as F
+from vibego.go.board import Board
+from vibego.net.model import Model, ModelConfig
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

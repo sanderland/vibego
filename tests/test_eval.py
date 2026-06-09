@@ -1,11 +1,11 @@
 import numpy as np
 
-from nanogo.eval.arena import Competitor, run_tournament
-from nanogo.eval.elo import bayes_elo
-from nanogo.eval.selfplay import area_score, play_game
-from nanogo.engine.search import NNEvaluator
-from nanogo.go.board import BLACK, WHITE, Board
-from nanogo.net.model import Model, ModelConfig
+from vibego.eval.arena import Competitor, run_tournament
+from vibego.eval.elo import bayes_elo
+from vibego.eval.selfplay import area_score, play_game
+from vibego.engine.search import NNEvaluator
+from vibego.go.board import BLACK, WHITE, Board
+from vibego.net.model import Model, ModelConfig
 
 
 # ---- area scoring ----

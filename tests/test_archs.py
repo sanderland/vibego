@@ -4,8 +4,8 @@ import dataclasses
 import pytest
 import torch
 
-from nanogo.go.features import NUM_GLOBAL, NUM_SPATIAL
-from nanogo.net.model import (
+from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
+from vibego.net.model import (
     ARCHS, GPoolResBlock, LinAttnResBlock, Model, ModelConfig, NBTResBlock, ResBlock,
     RWKVResBlock, _q_shift, arch_config,
 )

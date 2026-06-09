@@ -33,7 +33,7 @@ White-to-move node in the tree (half of it) was sign-flipped.**
 
 ## Fix
 
-`nanogo/engine/proxy.py`: force `reportAnalysisWinratesAs=BLACK` in the query, then in `_parse`
+`vibego/engine/proxy.py`: force `reportAnalysisWinratesAs=BLACK` in the query, then in `_parse`
 convert to side-to-move (`persp = +1` if Black to move else `−1`; flip winrate→1−wr, score→−score,
 ownership→−own). Verified by re-running the trace: our evals now match KataGo at **both** colors
 (root W 0.578 ≈ KataGo's W 0.592; after-F6 B 0.509 ≈ KataGo's 0.512).

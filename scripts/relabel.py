@@ -2,7 +2,7 @@
 
 Reads source .npz training files, reconstructs each position's stones from the input feature
 planes, queries a teacher engine (any KataGo-analysis-protocol command, e.g. a strong b18)
-for its policy / value / ownership / score, and writes new .npz files in nanogo's training
+for its policy / value / ownership / score, and writes new .npz files in vibego's training
 format with the TEACHER's outputs as targets. Training on these = distilling the teacher into
 the student (the policy cross-entropy against the teacher's soft policy is the logit forcing).
 
@@ -30,8 +30,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.go.board import xy_to_gtp
-from nanogo.net import data as ndata
+from vibego.go.board import xy_to_gtp
+from vibego.net import data as ndata
 
 
 class TeacherEngine:

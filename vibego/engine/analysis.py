@@ -203,7 +203,7 @@ class AnalysisEngine:
                 continue
             action = q.get("action")
             if action == "query_version":
-                self._emit({"id": q.get("id"), "version": "1.0.0-nanogo"})
+                self._emit({"id": q.get("id"), "version": "1.0.0-vibego"})
             elif action == "terminate":
                 tid = q.get("terminateId")
                 if tid is not None:
@@ -225,7 +225,7 @@ class AnalysisEngine:
             self._emit({"id": q.get("id"), "error": str(e)})
 
     def run(self):
-        sys.stderr.write("nanogo analysis engine: started, ready to begin handling requests.\n")
+        sys.stderr.write("vibego analysis engine: started, ready to begin handling requests.\n")
         sys.stderr.flush()
         reader = threading.Thread(target=self._reader, daemon=True)
         reader.start()

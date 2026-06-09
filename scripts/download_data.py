@@ -70,7 +70,7 @@ def main():
         if not args.keep_tgz:
             os.remove(tgz_path)
 
-    from nanogo.net import data as _data
+    from vibego.net import data as _data
     total = len(_data.list_npz(args.out))
     print(f"done. {total} npz files under {args.out}/")
 

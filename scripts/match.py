@@ -70,7 +70,7 @@ def main():
     p.add_argument("--judge-visits", type=int, default=256)
     p.add_argument("--opening-plies", type=int, default=8,
                    help="forced random opening stones for game diversity (0 = deterministic; "
-                        "needed when both engines are deterministic, e.g. nanogo-vs-nanogo)")
+                        "needed when both engines are deterministic, e.g. vibego-vs-vibego)")
     p.add_argument("--opening-seed", type=int, default=0)
     args = p.parse_args()
 

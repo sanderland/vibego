@@ -1,4 +1,4 @@
-"""Run a round-robin tournament between nanogo checkpoints and rank them by Bayesian Elo.
+"""Run a round-robin tournament between vibego checkpoints and rank them by Bayesian Elo.
 
     uv run python scripts/arena.py --models checkpoints/depth6.pt checkpoints/depth10.pt \
         --games 20 --visits 100
@@ -11,8 +11,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.common import get_device
-from nanogo.eval.arena import Competitor, format_standings, run_tournament
+from vibego.common import get_device
+from vibego.eval.arena import Competitor, format_standings, run_tournament
 from run_engine import load_evaluator  # type: ignore
 
 

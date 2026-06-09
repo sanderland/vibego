@@ -1,4 +1,4 @@
-"""Inference cost of a nanogo net: parameter count and FLOPs/eval (batch=1).
+"""Inference cost of a vibego net: parameter count and FLOPs/eval (batch=1).
 
 We count FLOPs by **dispatch** (torch FlopCounterMode), not forward hooks: the
 counter tallies every FLOP-heavy aten op — conv *and* the matmul/einsum/bmm in
@@ -11,7 +11,7 @@ next to the matmuls and BN fuses into the preceding conv at inference anyway.
 get_total_flops() already returns 2 * MACs (one multiply + one add per MAC),
 the usual convention; we derive macs = flops // 2 for the report.
 
-CLI:  python -m nanogo.net.flops [arch ...]   (defaults to every arch in ARCHS)
+CLI:  python -m vibego.net.flops [arch ...]   (defaults to every arch in ARCHS)
 """
 from __future__ import annotations
 

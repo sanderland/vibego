@@ -1,5 +1,5 @@
 """Distillation (logit forcing) data path: relabel a position with a teacher's outputs and
-confirm the result is a valid, trainable nanogo training npz."""
+confirm the result is a valid, trainable vibego training npz."""
 import os
 import sys
 
@@ -9,8 +9,8 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 import relabel  # noqa: E402
 
-from nanogo.net import data, losses  # noqa: E402
-from nanogo.net.model import Model, ModelConfig  # noqa: E402
+from vibego.net import data, losses  # noqa: E402
+from vibego.net.model import Model, ModelConfig  # noqa: E402
 
 
 class FakeTeacher:

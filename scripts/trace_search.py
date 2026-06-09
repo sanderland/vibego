@@ -20,9 +20,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from nanogo.engine.proxy import KataGoEvaluator
-from nanogo.engine.search import MCTS, Node
-from nanogo.go.board import BLACK, WHITE, Board, PASS, gtp_to_xy, xy_to_gtp
+from vibego.engine.proxy import KataGoEvaluator
+from vibego.engine.search import MCTS, Node
+from vibego.go.board import BLACK, WHITE, Board, PASS, gtp_to_xy, xy_to_gtp
 
 
 def mv_str(mv, ys):

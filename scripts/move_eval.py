@@ -22,8 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import relabel  # noqa: E402  (TeacherEngine send/recv)
-from nanogo.go.board import BLACK, WHITE, xy_to_gtp  # noqa: E402
-from nanogo.net import data as ndata  # noqa: E402
+from vibego.go.board import BLACK, WHITE, xy_to_gtp  # noqa: E402
+from vibego.net import data as ndata  # noqa: E402
 
 
 def position(bin_row, glob_row, pos_len, tomove):

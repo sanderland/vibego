@@ -1,7 +1,7 @@
 """Stream training batches from katagoarchive .npz files.
 
 Each .npz holds many positions. We unpack the packed binary features, select our
-channel subset (nanogo.features), pull the targets we train on, and optionally apply
+channel subset (vibego.features), pull the targets we train on, and optionally apply
 one of the 8 board symmetries per batch. Modeled on KataGo's
 data_processing_pytorch.read_npz_training_data but trimmed to our subset.
 """

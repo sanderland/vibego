@@ -1,4 +1,4 @@
-from nanogo.go.board import BLACK, EMPTY, WHITE, Board, gtp_to_xy, opp, xy_to_gtp
+from vibego.go.board import BLACK, EMPTY, WHITE, Board, gtp_to_xy, opp, xy_to_gtp
 
 
 def test_capture_single_stone():

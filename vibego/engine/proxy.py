@@ -1,5 +1,5 @@
 """A drop-in evaluator that gets raw policy/value/ownership from an external KataGo-protocol
-engine instead of a local model. This lets nanogo's MCTS run on a *known-strong* net (e.g.
+engine instead of a local model. This lets vibego's MCTS run on a *known-strong* net (e.g.
 KataGo's b6c96), so we can test our tree search in isolation: if our search + b6c96 evals plays
 as well as KataGo's own engine at equal visits, the search is sound; if not, it has a bug.
 

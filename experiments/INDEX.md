@@ -1,6 +1,6 @@
 # experiments/
 
-The lab notebook for nanogo. The goal of the project is a tiny, hackable KataGo-style Go
+The lab notebook for vibego. The goal of the project is a tiny, hackable KataGo-style Go
 engine + training pipeline (nanoGPT/nanochat spirit) that's easy to run ablations on.
 
 ## How this folder works

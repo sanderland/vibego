@@ -78,4 +78,4 @@ dated files for full detail.
   validation / debugging selection.
 - `scripts/policy_eval.py` — raw net agreement (policy/winrate/score/ownership) vs a reference.
   Use the **neutral** zhizi/b40 as `--ref` (not b18, our teacher). NB: raw agreement ≠ game strength.
-- `nanogo/engine/proxy.py` — run our MCTS on an external KataGo net (search-isolation test).
+- `vibego/engine/proxy.py` — run our MCTS on an external KataGo net (search-isolation test).

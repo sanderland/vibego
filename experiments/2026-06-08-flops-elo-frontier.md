@@ -88,7 +88,7 @@ Both extremes lose: too wide (d6) and too deep (d9–10). `dw7` (b7c106nbt) is t
 ## Methodology bug found & fixed (Elo re-running)
 
 The first Elo attempt was **degenerate and discarded**: `vs.py`'s `genmove` always plays the **top**
-move, so two deterministic nanogo engines replay **one identical game per colour** — 24 alternating
+move, so two deterministic vibego engines replay **one identical game per colour** — 24 alternating
 games = effectively 2 distinct games → win-rates collapsed to 0/12/24 and Elo saturated at ±3600.
 (Earlier arenas only varied because *KataGo* injects its own search randomness.) **Fix:** forced
 **randomized openings** (`random_opening` in `vs.py`; `--opening-plies` default 8, added to

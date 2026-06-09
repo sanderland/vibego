@@ -41,7 +41,7 @@ right lever, and we now have a baseline + CI to measure it against.
 
 ## 3. The nbt ladder (candidate architectures, ready to train)
 
-Added KataGo's **nested-bottleneck block** (`NBTResBlock`) to `nanogo/net/model.py`: 1×1 bottleneck
+Added KataGo's **nested-bottleneck block** (`NBTResBlock`) to `vibego/net/model.py`: 1×1 bottleneck
 c→c/2, two nested pre-act 3×3 residual blocks at c/2, 1×1 back to c, outer residual. Four
 half-width 3×3 convs cost ≈ two full-width ones, so an nbt block buys more depth/param. Registered
 a full ladder (every 3rd block a full-width gpool block, as in the regular archs). Measured:
