@@ -1,10 +1,16 @@
-"""Inference-speed benchmark: measured wall-clock nnevals/s per architecture, so we can compare
-nets at equal *inference cost* (speed-matched) instead of only equal params (size-matched).
+"""Inference-cost benchmark: per architecture, both the hardware-independent **FLOPs/eval** (our
+north-star x-axis for the Pareto frontier) and measured **wall-clock** nnevals/s, so we can compare
+nets at equal inference cost (FLOP- or speed-matched) instead of only equal params (size-matched).
 
 FLOPs alone undersell nbt's real cost: its deeper, narrower, bottlenecked trunk has more
 sequential layers and memory round-trips (lower arithmetic intensity), so wall-clock can be worse
 than the FLOP count suggests — exactly the "framework timing vs real backend" gap the KataGo devs
-flag. Speed is weight-independent, so this benches untrained models built from the registry.
+flag. Reporting both columns is the point: their *ratio* (eff. MFLOP/ms) is the FLOP-efficiency that
+flatters nbt on FLOPs vs real CPU. Both are weight-independent, so this uses untrained registry nets.
+
+FLOPs are counted by dispatch (torch FlopCounterMode), so attention einsums in the linattn/rwkv
+blocks are included — the honesty check IDEAS.md demands for "is linear attention actually cheaper
+at N=361?". get_total_flops() already returns MACs*2, matching our "FLOPs = MACs*2" convention.
 
     uv run python scripts/bench_net.py --device mps --batch-sizes 1,16 --iters 60
     uv run python scripts/bench_net.py --device cpu --arch b6c96-gpool --arch b6c112nbt
@@ -17,6 +23,7 @@ import sys
 import time
 
 import torch
+from torch.utils.flop_counter import FlopCounterMode
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -33,6 +40,19 @@ DEFAULT = [
     ("linat6b", "b6c96-linat"), ("rwkv6b", "b6c96-rwkv"),
     ("linat10b", "b10c128-linat"), ("rwkv10b", "b10c128-rwkv"),
 ]
+
+
+@torch.no_grad()
+def count_flops(cfg) -> float:
+    """FLOPs for a single eval (batch=1), in MFLOP. Counted on CPU by dispatch so conv *and*
+    attention-einsum ops are all included; get_total_flops() returns MACs*2."""
+    model = Model(cfg).eval()
+    sp = torch.zeros(1, NUM_SPATIAL, cfg.pos_len, cfg.pos_len)
+    gl = torch.zeros(1, NUM_GLOBAL)
+    fc = FlopCounterMode(display=False)
+    with fc:
+        model(sp, gl)
+    return fc.get_total_flops() / 1e6
 
 
 def sync(device):
@@ -74,18 +94,22 @@ def main():
     nets = [(a, a) for a in args.arch] if args.arch else DEFAULT
     print(f"device={device}  iters={args.iters}  warmup={args.warmup}")
 
-    # header
+    # header: params + FLOPs/eval, then per-batch wall-clock. eff = MFLOP/ms at the smallest batch
+    # (the FLOP-efficiency that flatters nbt on FLOPs vs real CPU).
     cols = "".join(f"{'b%d ms' % b:>9s}{'b%d ev/s' % b:>10s}" for b in batches)
-    print(f"{'name':15s} {'arch':15s} {'params':>8s}{cols}")
-    base = {}  # batch -> baseline evals/s (first net) for a relative column
+    print(f"{'name':15s} {'arch':15s} {'params':>8s}{'MFLOP':>9s}{cols}{'eff MF/ms':>10s}")
     for name, arch in nets:
         cfg = arch_config(arch)
         nparams = sum(x.numel() for x in Model(cfg).parameters()) / 1e6
-        cells = ""
+        mflop = count_flops(cfg)
+        cells, first_ms = "", None
         for b in batches:
             ms, eps = bench(cfg, device, b, args.iters, args.warmup)
+            if first_ms is None:
+                first_ms = ms
             cells += f"{ms:9.2f}{eps:10.0f}"
-        print(f"{name:15s} {arch:15s} {nparams:7.3f}M{cells}", flush=True)
+        eff = mflop / first_ms  # effective batch-1 throughput
+        print(f"{name:15s} {arch:15s} {nparams:7.3f}M{mflop:9.0f}{cells}{eff:10.0f}", flush=True)
 
 
 if __name__ == "__main__":
