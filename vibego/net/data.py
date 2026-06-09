@@ -89,6 +89,7 @@ def read_batches(
     shuffle_buffer: int = 20000,
     drop_last: bool = True,
     prefetch_ahead: int = 128,
+    only_full_board: bool = False,
 ):
     """Stream batches with a shuffle buffer (archive npz files hold only ~25 rows each, and
     rows within a file are correlated, so we accumulate and shuffle before batching).
@@ -121,6 +122,11 @@ def read_batches(
         count = len(leftover)
 
     for spatial, glob, policy, gt, own in _prefetch(npz_files, pos_len, ahead=prefetch_ahead):
+        if only_full_board:  # keep only full pos_len×pos_len boards (our 19×19 play setup)
+            keep = spatial[:, 0].sum(axis=(1, 2)) == pos_len * pos_len
+            spatial, glob, policy, gt, own = (a[keep] for a in (spatial, glob, policy, gt, own))
+            if spatial.shape[0] == 0:
+                continue
         for c, a in zip(cols, (spatial, glob, policy, gt, own)):
             pending[c].append(a)
         count += spatial.shape[0]

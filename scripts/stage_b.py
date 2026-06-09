@@ -26,6 +26,8 @@ KATAGO = os.path.join(REPO, "katago_bin", "katago.sh")
 CFG = os.path.join(REPO, "katago_bin", "analysis.cfg")
 ELO_RE = re.compile(r"Elo\s+([+-]?\d+)\s+\[95% CI\s+([+-]?\d+),\s*([+-]?\d+)\]")
 WR_RE = re.compile(r"win rate:\s+([\d.]+)%")
+# paired scoreLead is the sensitive discriminator (opening variance cancels) — prefer it over Elo
+PAIR_RE = re.compile(r"PAIRED .*?:\s+([+-][\d.]+)\s+±\s+([\d.]+)\s+\[95% CI\s+([+-][\d.]+),\s+([+-][\d.]+)\].*?decisive=(\w+)")
 
 
 def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, workers, name):
@@ -40,11 +42,16 @@ def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, work
     log = out.stdout + "\n" + out.stderr
     m = ELO_RE.search(log)
     wr = WR_RE.search(log)
+    pr = PAIR_RE.search(log)
     res = {"rc": out.returncode}
     if m:
         res["elo"], res["elo_lo"], res["elo_hi"] = int(m.group(1)), int(m.group(2)), int(m.group(3))
     if wr:
         res["winrate"] = float(wr.group(1))
+    if pr:  # paired scoreLead (the sensitive discriminator) + decisive flag
+        res["score_lead"], res["score_lead_se"] = float(pr.group(1)), float(pr.group(2))
+        res["score_lead_lo"], res["score_lead_hi"] = float(pr.group(3)), float(pr.group(4))
+        res["decisive"] = pr.group(5)
     return res, log
 
 
@@ -74,14 +81,23 @@ def main():
         base.update({"id": cid, "stage": "B",
                      "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                      "extra": {"games": args.games, "visits": args.visits, "anchor": "g170-b6c96"}})
-        for k in ("elo", "elo_lo", "elo_hi", "winrate"):
+        for k in ("elo", "elo_lo", "elo_hi", "winrate", "score_lead", "score_lead_se",
+                  "score_lead_lo", "score_lead_hi", "decisive"):
             if k in res:
                 base[k] = res[k]
         reg.append_row(base)
-        print(f"  [{cid}] Elo={res.get('elo')} [{res.get('elo_lo')},{res.get('elo_hi')}] "
-              f"wr={res.get('winrate')}% (rc={res['rc']})", flush=True)
+        # paired scoreLead is the headline (sensitive); Elo shown for context
+        print(f"  [{cid}] scoreLead={res.get('score_lead')}±{res.get('score_lead_se')} "
+              f"[{res.get('score_lead_lo')},{res.get('score_lead_hi')}] decisive={res.get('decisive')} "
+              f"| Elo={res.get('elo')} [{res.get('elo_lo')},{res.get('elo_hi')}] (rc={res['rc']})", flush=True)
 
-    print("\n=== real frontier (FLOPs↓ vs Elo↑) ===")
+    print("\n=== real frontier (FLOPs↓ vs paired scoreLead↑, vs anchor) ===")
+    rows = reg.read_rows()
+    front, _ = reg.pareto(rows, "flops", "score_lead", minimize_x=True, minimize_y=False)
+    for r in sorted(front, key=lambda r: r.get("flops", 0)):
+        print(f"  {r['id']:14s} {r.get('arch'):14s} {r.get('flops')} MFLOP  "
+              f"scoreLead={r.get('score_lead')}  Elo={r.get('elo')}")
+    print("\n=== (FLOPs↓ vs Elo↑, for reference) ===")
     rows = reg.read_rows()
     front, _ = reg.pareto(rows, "flops", "elo", minimize_x=True, minimize_y=False)
     for r in sorted(front, key=lambda r: r.get("flops", 0)):

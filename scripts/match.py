@@ -109,10 +109,21 @@ def main():
     elo = winrate_to_elo(wr)
     elo_lo, elo_hi = winrate_to_elo(wr - 1.96 * se_wr), winrate_to_elo(wr + 1.96 * se_wr)
 
+    # PAIRED scoreLead (the sensitive, low-variance estimator): games (2k, 2k+1) share an opening
+    # with A as Black then White, so the pair-mean cancels the opening + color variance that
+    # dominates per-game noise. CI over pair-means is much tighter than the per-game stderr above,
+    # and scoreLead resolves small gaps that win-rate Elo can't (parity: -8.7±5.4 vs ±214 Elo).
+    pairs = [(a_scores[i] + a_scores[i + 1]) / 2 for i in range(0, n - n % 2, 2)]
+    pmean = sum(pairs) / len(pairs) if pairs else float("nan")
+    pse = statistics.pstdev(pairs) / len(pairs) ** 0.5 if len(pairs) > 1 else float("nan")
+    plo, phi = pmean - 1.96 * pse, pmean + 1.96 * pse
+
     print(f"\n{n} games @ {args.visits} visits ({args.a_name} vs {args.b_name}), "
           f"{args.a_name}'s perspective:")
     print(f"  {metric}: {mean:+.1f} ± {se:.1f} (stderr), per-game sd "
           f"{statistics.pstdev(a_scores):.1f}")
+    print(f"  PAIRED {metric}: {pmean:+.2f} ± {pse:.2f}  [95% CI {plo:+.2f}, {phi:+.2f}]  "
+          f"({len(pairs)} pairs)  decisive={'yes' if pairs and (plo > 0 or phi < 0) else 'no'}")
     print(f"  win rate: {wr * 100:.1f}% ({wins:.1f}/{n})  ->  "
           f"Elo {elo:+.0f}  [95% CI {elo_lo:+.0f}, {elo_hi:+.0f}]")
 

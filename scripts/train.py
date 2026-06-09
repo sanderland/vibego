@@ -57,6 +57,8 @@ def parse_args():
     p.add_argument("--w-value", type=float, default=0.6)
     p.add_argument("--w-score", type=float, default=0.02)
     p.add_argument("--w-ownership", type=float, default=0.15)
+    p.add_argument("--only-19x19", action="store_true",
+                   help="train only on full 19x19 boards (the kata1 set is ~31%% other sizes)")
     return p.parse_args()
 
 
@@ -103,6 +105,7 @@ def infinite_batches(files, args, device, seed):
             order, args.batch_size, args.pos_len, device,
             randomize_symmetries=True, seed=seed + epoch,
             prefetch_ahead=8,  # big distilled shards (~190MB each) -> keep few resident
+            only_full_board=args.only_19x19,
         )
         epoch += 1
 
@@ -114,7 +117,7 @@ def evaluate(model, files, args, device, weights, max_batches):
     n = 0
     for batch in data.read_batches(files, args.batch_size, args.pos_len, device,
                                    randomize_symmetries=False, seed=0, drop_last=False,
-                                   prefetch_ahead=4):
+                                   prefetch_ahead=4, only_full_board=args.only_19x19):
         outputs = model(batch["spatial"], batch["glob"])
         _, parts = compute_losses(outputs, batch, batch["spatial"], weights)
         for k, v in parts.items():
