@@ -74,6 +74,9 @@ def main():
     p.add_argument("--runs-dir", default=RUNS)
     p.add_argument("--metric", default="total", choices=["total", "policy", "value", "score", "ownership"])
     p.add_argument("--out", default="experiments/curves.png")
+    p.add_argument("--ymax", type=float, default=4.0,
+                   help="clip the y-axis (early-step loss is huge and squashes the interesting "
+                        "tail); 0 = no clip")
     args = p.parse_args()
 
     if args.ids:
@@ -98,6 +101,11 @@ def main():
                     label=f"{name} (val {va[-1][1]:.3f})")
     ax.set_xlabel("step"); ax.set_ylabel(f"{args.metric} loss")
     ax.set_title(f"train (faint) + val (bold) — {args.metric}")
+    ys = [v for _, tr, va in runs for _, v in tr + va]
+    if ys and args.ymax:
+        lo = min(ys)
+        top = max(args.ymax, lo + 0.1)  # keep a usable window if all values exceed the clip
+        ax.set_ylim(lo - 0.03 * (top - lo), top)
     ax.grid(alpha=0.3); ax.legend(fontsize=7, ncol=2)
     fig.tight_layout()
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
