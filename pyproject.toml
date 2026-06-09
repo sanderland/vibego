@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "matplotlib>=3.7"]
 
 [build-system]
 requires = ["hatchling"]

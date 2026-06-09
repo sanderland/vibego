@@ -31,7 +31,8 @@ Sources feeding this list: our own bake-off (nbt sweeps val-loss at 6b/10b but r
 wall-clock at equal params), the [Go-AI survey](../docs/go-ai-survey.pdf), and the
 [KataGo dev discord summary](../docs/discord_experiments_summary.md).
 
-Each item: **why** (evidence) · **run** (concrete) · **cost** · **confidence**.
+Each item: **why** (evidence) · **run** (concrete) · **cost** · **confidence**. Rejected / deferred /
+low-priority ideas live in **[IDEAS.md](IDEAS.md)** (don't re-litigate them without new evidence).
 
 ---
 
