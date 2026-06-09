@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as Fnn
@@ -32,6 +33,7 @@ class ModelConfig:
     head_channels: int = 32
     gpool_channels: int = 32
     block_kinds: tuple[str, ...] = ("regular",) * 6
+    pattern_embed: bool = False   # add a local-3x3-pattern lookup embedding to the stem (memory-for-FLOPs)
 
     @property
     def num_blocks(self) -> int:
@@ -244,6 +246,97 @@ class RWKVResBlock(nn.Module):
         return x
 
 
+class GlobalModBlock(nn.Module):
+    """Smolgen-lite (Lc0-inspired) global-modulation block: a learned **global board summary**
+    drives a **content-dependent, spatially-varying FiLM modulation** of a local conv path — richer
+    than gpool's rank-0 broadcast *bias* (this is a multiplicative gain+shift that varies per cell),
+    at O(N·C·d), with no dense N² attention. The per-cell gain/shift `(γ,β)` is the sum of a global
+    term (from the pooled summary `g`) and a per-cell term (a 1×1 conv of the local features), so the
+    modulation is conditioned on the whole board yet differs at every intersection."""
+
+    def __init__(self, c: int, d: int = 64):
+        super().__init__()
+        self.bn1 = nn.BatchNorm2d(c)
+        self.conv1 = nn.Conv2d(c, c, 3, padding=1, bias=False)
+        self.fc_g = nn.Linear(2 * c, d)            # board summary from mean+max pool
+        self.fc_film = nn.Linear(d, 2 * c)         # global -> per-channel (γ, β), broadcast over space
+        self.conv_film = nn.Conv2d(c, 2 * c, 1)    # per-cell (γ, β) correction
+        self.bn2 = nn.BatchNorm2d(c)
+        self.conv2 = nn.Conv2d(c, c, 3, padding=1, bias=False)
+
+    def forward(self, x):
+        h = self.conv1(Fnn.relu(self.bn1(x)))
+        g = Fnn.relu(self.fc_g(global_pool(x)))                       # (B, d) global summary
+        film = self.fc_film(g).unsqueeze(-1).unsqueeze(-1) + self.conv_film(h)  # (B, 2C, H, W)
+        gamma, beta = film[:, : x.shape[1]], film[:, x.shape[1]:]
+        h = h * (1.0 + gamma) + beta                                  # global-conditioned, per-cell FiLM
+        out = self.conv2(Fnn.relu(self.bn2(h)))
+        return x + out
+
+
+_CANON3X3_CACHE: dict = {}
+
+
+def _build_3x3_canon():
+    """Map every base-3 3×3 pattern id (cell ∈ {empty=0, own=1, opp=2}, row-major, 3^9=19683 ids) to
+    a dense index over its **dihedral(D4)-canonical** representative (the min id over the 8 rotations/
+    reflections). Returns (canon int64[19683], K) where K = 2862 (the exact D4-orbit count of base-3
+    3×3 by Burnside; own/opp kept distinct, so ~2× the classical colour-symmetric ~1.4k). Cached."""
+    if 3 in _CANON3X3_CACHE:
+        return _CANON3X3_CACHE[3]
+    transforms = [
+        lambda r, c: (r, c),            lambda r, c: (c, 2 - r),       # identity, rot90
+        lambda r, c: (2 - r, 2 - c),    lambda r, c: (2 - c, r),       # rot180, rot270
+        lambda r, c: (r, 2 - c),        lambda r, c: (2 - r, c),       # mirror cols, mirror rows
+        lambda r, c: (c, r),            lambda r, c: (2 - c, 2 - r),   # transpose, anti-transpose
+    ]
+    perms = []
+    for t in transforms:
+        p = [0] * 9
+        for i in range(9):
+            rr, cc = t(i // 3, i % 3)
+            p[rr * 3 + cc] = i          # new cell (rr,cc) takes the value from original cell i
+        perms.append(p)
+    pow3 = (3 ** np.arange(9)).astype(np.int64)
+    ids = np.arange(3 ** 9, dtype=np.int64)
+    digits = (ids[:, None] // pow3[None, :]) % 3                       # (19683, 9)
+    canon_raw = ids.copy()
+    for p in perms:
+        canon_raw = np.minimum(canon_raw, (digits[:, p] * pow3[None, :]).sum(1))
+    uniq = np.unique(canon_raw)
+    remap = np.zeros(canon_raw.max() + 1, dtype=np.int64)
+    remap[uniq] = np.arange(len(uniq))
+    canon = remap[canon_raw]
+    _CANON3X3_CACHE[3] = (canon, len(uniq))
+    return canon, len(uniq)
+
+
+class PatternEmbed(nn.Module):
+    """Local-pattern lookup embedding (params-as-memory, not FLOPs): map each cell's **dihedral-
+    canonical 3×3 {empty/own/opp} neighbourhood** to a learned C-dim embedding (a table gather, ~0
+    MACs) and scatter-add it into the stem — storing local Go shapes in a small ~Kx C table instead
+    of spending conv FLOPs to recompute them. own/opp are the side-to-move-relative stone channels
+    (model spatial channels 1 and 2). Init zero so it's a no-op until trained (clean ablation)."""
+
+    OWN_CH, OPP_CH = 1, 2
+
+    def __init__(self, c: int):
+        super().__init__()
+        canon, k = _build_3x3_canon()
+        self.register_buffer("canon", torch.from_numpy(canon))                   # (19683,) long
+        self.register_buffer("pow3", torch.tensor([3 ** i for i in range(9)]).view(1, 9, 1))
+        self.embed = nn.Embedding(k, c)
+        nn.init.zeros_(self.embed.weight)
+
+    def forward(self, spatial):
+        B, _, H, W = spatial.shape
+        state = spatial[:, self.OWN_CH] + 2.0 * spatial[:, self.OPP_CH]          # (B,H,W) in {0,1,2}
+        patches = Fnn.unfold(state.unsqueeze(1), kernel_size=3, padding=1)        # (B, 9, H*W), pad=empty
+        raw = (patches.long() * self.pow3).sum(1)                                # (B, H*W) base-3 id
+        emb = self.embed(self.canon[raw])                                        # (B, H*W, C)
+        return emb.transpose(1, 2).reshape(B, -1, H, W)
+
+
 class Model(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -263,9 +356,12 @@ class Model(nn.Module):
                 blocks.append(LinAttnResBlock(c))
             elif kind == "rwkv":
                 blocks.append(RWKVResBlock(c))
+            elif kind == "globmod":
+                blocks.append(GlobalModBlock(c))
             else:
                 raise ValueError(f"unknown block kind {kind!r}")
         self.blocks = nn.ModuleList(blocks)
+        self.pattern_embed = PatternEmbed(c) if config.pattern_embed else None
         self.trunk_bn = nn.BatchNorm2d(c)
 
         hc = config.head_channels
@@ -288,6 +384,8 @@ class Model(nn.Module):
     def forward(self, spatial: torch.Tensor, glob: torch.Tensor):
         B = spatial.shape[0]
         x = self.stem(spatial) + self.global_fc(glob).view(B, -1, 1, 1)
+        if self.pattern_embed is not None:
+            x = x + self.pattern_embed(spatial)
         for block in self.blocks:
             x = block(x)
         x = Fnn.relu(self.trunk_bn(x))
@@ -352,6 +450,14 @@ ARCHS: dict[str, ModelConfig] = {
     "b6c96-rwkv":     ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True, glob="rwkv")),
     "b10c128-linat":  ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, glob="linattn")),
     "b10c128-rwkv":   ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, glob="rwkv")),
+    # smolgen-lite global modulation (Lc0-inspired): every-3rd slot = global-conditioned per-cell
+    # FiLM instead of gpool — richer (multiplicative, spatially-varying) global mixing at low FLOPs.
+    "b6c96-globmod":  ModelConfig(channels=96,  block_kinds=_kinds(6,  gpool=True, glob="globmod")),
+    "b10c128-globmod": ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, glob="globmod")),
+    # local-pattern lookup embedding (params-as-memory, ~0 FLOPs): a dihedral-canonical 3x3 table
+    # added to the stem of an otherwise-standard arch — ablate the memory-for-FLOPs bet vs the base.
+    "b6c96-gpool-pat": ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True), pattern_embed=True),
+    "b6c96nbt-pat":   ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True, base="nbt"), pattern_embed=True),
 }
 
 

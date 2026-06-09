@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 import torch
 
-from vibego.engine.search import MCTS, NNEvaluator
+from vibego.engine.search import MCTS, NNEvaluator, Node
 from vibego.go.board import BLACK, PASS, Board
 from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
 
@@ -43,6 +43,28 @@ def test_reporting_separates_winloss_and_score():
     assert root.N >= 16
     assert -1.0 <= root.winloss() <= 1.0
     assert abs(root.score()) <= 6.0 + 1e-6  # reported score lead is the win-loss-independent stat
+
+
+def test_winner_locked_signal():
+    m = MCTS(None, komi=7.5, pos_len=19)
+    root = Node(None, 1.0)
+    a, b = Node(0, 0.5), Node(1, 0.5)
+    root.children = [a, b]
+    a.N, b.N = 20, 10
+    assert m._winner_locked(root, remaining=9)       # lead 10 > 9 remaining -> locked
+    assert not m._winner_locked(root, remaining=10)  # lead 10 not > 10 -> could still tie/flip
+    root.children = [a]                              # a single child can't be "locked" vs a rival
+    assert not m._winner_locked(root, remaining=0)
+
+
+def test_early_stop_runs_and_respects_budget():
+    # Early-stop must terminate and never run *past* the budget (it can only stop sooner); with a
+    # uniform fake eval the winner rarely locks, so this asserts safety/termination, not the cut
+    # itself (the lock signal is covered exactly by test_winner_locked_signal).
+    early = MCTS(_FakeEval(), komi=7.5, pos_len=19, early_stop=True,
+                 early_stop_min_frac=0.5).run(Board(7), visits=32, batch_size=4)
+    assert 0 < early.N <= 32 + 4                      # terminates within budget (+ one trailing batch)
+    assert early.children                             # still produced a usable tree
 
 
 def test_evaluator_surfaces_errors_instead_of_hanging():

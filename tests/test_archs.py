@@ -6,8 +6,8 @@ import torch
 
 from vibego.go.features import NUM_GLOBAL, NUM_SPATIAL
 from vibego.net.model import (
-    ARCHS, GPoolResBlock, LinAttnResBlock, Model, ModelConfig, NBTResBlock, ResBlock,
-    RWKVResBlock, _q_shift, arch_config,
+    ARCHS, GlobalModBlock, GPoolResBlock, LinAttnResBlock, Model, ModelConfig, NBTResBlock,
+    PatternEmbed, ResBlock, RWKVResBlock, _build_3x3_canon, _q_shift, arch_config,
 )
 
 
@@ -105,6 +105,51 @@ def test_q_shift_moves_each_quarter_one_pixel():
 def test_linattn_requires_divisible_heads():
     with pytest.raises(ValueError):
         LinAttnResBlock(30, heads=4)
+
+
+def test_globmod_arch_places_block_and_mixes_globally():
+    assert _block_types(arch_config("b6c96-globmod")) == [
+        "ResBlock", "ResBlock", "GlobalModBlock",
+        "ResBlock", "ResBlock", "GlobalModBlock"]
+    block = GlobalModBlock(32).eval()
+    x = torch.zeros(1, 32, 7, 7)
+    x[0, :, 3, 3] = 5.0
+    out = block(x)
+    assert out.shape == x.shape and torch.isfinite(out).all()
+    assert (out - x)[0, :, 0, 0].abs().sum() > 0  # global summary modulates a far corner
+
+
+def test_pattern_canon_is_dihedral_canonical():
+    canon, k = _build_3x3_canon()
+    assert k == 2862                             # exact D4-orbit count of base-3 3x3 (Burnside)
+    # a single own stone at the four 3x3 corners is one symmetry class (cells 0,2,6,8)
+    assert len({int(canon[3 ** i]) for i in (0, 2, 6, 8)}) == 1
+    assert canon[3 ** 0] != canon[2 * 3 ** 0]    # own corner vs opp corner: no colour symmetry
+    assert canon[3 ** 4] != canon[3 ** 0]        # centre-own is a distinct class from corner-own
+
+
+def test_pattern_embed_zero_init_then_local_sensitivity():
+    pe = PatternEmbed(8)
+    # zero-init -> the lookup contributes nothing until trained (clean ablation), for any input
+    assert torch.count_nonzero(pe(torch.zeros(1, NUM_SPATIAL, 5, 5))) == 0
+    torch.nn.init.normal_(pe.embed.weight)
+    sp = torch.zeros(1, NUM_SPATIAL, 5, 5)
+    base = pe(sp)
+    sp2 = sp.clone(); sp2[0, 1, 2, 2] = 1.0      # own stone at centre (channel 1 = own)
+    diff = (pe(sp2) - base).abs().sum(1)[0]      # (5,5)
+    assert diff[2, 2] > 0 and diff[1, 1] > 0 and diff[3, 3] > 0  # whole 3x3 neighbourhood shifts
+    assert diff[0, 0] == 0                        # a cell whose window excludes (2,2) is unchanged
+
+
+def test_pattern_embed_arch_builds_and_config_roundtrips():
+    cfg = arch_config("b6c96-gpool-pat")
+    assert cfg.pattern_embed is True
+    model = Model(cfg)
+    assert model.pattern_embed is not None
+    out = model(torch.zeros(1, NUM_SPATIAL, 19, 19), torch.zeros(1, NUM_GLOBAL))
+    assert out[0].shape == (1, 19 * 19 + 1)
+    restored = ModelConfig(**dataclasses.asdict(cfg))
+    assert restored == cfg and restored.pattern_embed is True
 
 
 def test_unknown_arch_raises():

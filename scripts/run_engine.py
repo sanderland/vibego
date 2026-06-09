@@ -42,6 +42,10 @@ def parse_args():
     p.add_argument("-pos-len", type=int, default=19)
     p.add_argument("-proxy", default=None,
                    help="run OUR search on an external engine's net (KataGo cmd) — search diagnostic")
+    p.add_argument("-early-stop", action="store_true",
+                   help="stop search once the leading move's visit lead is unbeatable (low-visit latency lever)")
+    p.add_argument("-early-stop-min-frac", type=float, default=0.5,
+                   help="don't early-stop before this fraction of the visit budget is spent")
     args, _ignored = p.parse_known_args()
     return args
 
@@ -72,7 +76,8 @@ def main():
         pos_len = config.pos_len
         sys.stderr.write(f"vibego: loaded {args.model} ({config}) on {device}\n")
     sys.stderr.flush()
-    mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log}
+    mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log,
+                   "early_stop": args.early_stop, "early_stop_min_frac": args.early_stop_min_frac}
     engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,
                             leaf_batch=args.leaf_batch, lcb_stdevs=args.lcb_stdevs,
                             mcts_kwargs=mcts_kwargs)

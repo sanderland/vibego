@@ -179,7 +179,8 @@ class MCTS:
                  dynamic_score_factor: float = 0.3, static_score_scale: float = 2.0,
                  dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.0,
                  cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0,
-                 fpu_parent_pow: float = 2.0):
+                 fpu_parent_pow: float = 2.0,
+                 early_stop: bool = False, early_stop_min_frac: float = 0.5):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -203,6 +204,11 @@ class MCTS:
         self.cpuct_stdev_scale = cpuct_stdev_scale
         self.cpuct_stdev_prior = cpuct_stdev_prior
         self.cpuct_stdev_prior_weight = cpuct_stdev_prior_weight
+        # Dynamic early-stopping (low-visit/wasm latency lever, IDEAS.md): stop once the leading
+        # root child is locked — its visit lead exceeds the visits still to spend, so no remaining
+        # visit can change the visit-winner. Parameter-free and provably safe for visit selection.
+        self.early_stop = early_stop
+        self.early_stop_min_frac = early_stop_min_frac
 
     def _cpuct_stdev_factor(self, node) -> float:
         n = node.N
@@ -331,11 +337,20 @@ class MCTS:
                 n.Wsc += sign * sc
         return len(paths)
 
+    def _winner_locked(self, root: Node, remaining: int) -> bool:
+        """True once the top-visited root child's visit lead can't be overtaken by the remaining
+        visits (so the visit-winner is decided) — the cheap, safe early-stop signal."""
+        ns = sorted((c.N for c in root.children), reverse=True)
+        return len(ns) >= 2 and (ns[0] - ns[1]) > remaining
+
     def run(self, root_board: Board, visits: int, batch_size: int = 16) -> Node:
         root = self.prepare(root_board)
         done = 0
+        min_done = max(2, int(self.early_stop_min_frac * visits))
         while done < visits:
             done += self.step(root, adaptive_batch(batch_size, done, visits))
+            if self.early_stop and done >= min_done and self._winner_locked(root, visits - done):
+                break
         return root
 
 
