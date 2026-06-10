@@ -220,6 +220,19 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
+## Mixer fair trial (e5, closing the a2 injustice) — viable mid-pack, not frontier
+
+The a2 screen condemned linat/rwkv/globmod on 8k-step val under a conv-tuned recipe — by our
+own sign-flip findings, an invalid verdict. Fair shot: lr triage (e5a: val nearly lr-flat →
+recipe wasn't the burier; two lr04 arms died at launch, logs empty, not chased) → best arms at
+300sh/30k + Stage-B (e5b). Result: **rwkv ties conv-nbt on val at scale** (3.018 vs 3.017 —
+the 8k gap of ~0.05−0.1 closes; another scale-flip) and at val-parity the mixers take **no
+Elo penalty** (rwkv −40.2 ± 7.6 / globmod −36.4 ± 5.4 vs conv-nbt −48.6 ± 5.6) — but both sit
+behind the pattern/dw7 frontier (−32.6 / −25.8) at equal-or-higher quality cost. rwkv remains
+the fastest trunk per CPU-ms (7.54). **Verdict: linear mixers are honest mid-pack at 6b —
+neither the screen's "rejected" nor a win. Axis closed; true-transformer arm deprioritized**
+(linear results lower the prior; full attention at N=361 costs real FLOPs).
+
 ## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
 
 Downloaded the **final** g170e anchors (`g170e-b10c128-s1141M`, `g170e-b15c192-s1672M` →
