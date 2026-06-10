@@ -129,6 +129,12 @@ cron armed: Stage-B on completion, registry/notes/plot updates, user report.
 matches the 1567-MFLOP s_b10nbt's val (2.878). s3 seed-variance batch (dw7/b10nbt/b10pat at
 seed 2, 300sh/30k) training concurrently.
 
+**s3 seed-variance (300sh/30k, seed 1 vs 2):** dw7 2.957/2.954, b10nbt 2.878/2.867, b10pat
+2.866/2.862 — **seed noise on val ≈ 0.003–0.011**, so val deltas under ~0.015 are noise-level.
+Pattern's val edge at b10 (0.012 / 0.005) is marginal but sign-consistent across seeds; the
+seed-2 Stage-B (running) is the Elo replicate that decides it. Muon presumably contributes to
+the low seed variance (whitened updates); nice property for screening either way.
+
 **s2 Stage-B: Elo −22 [−110,+64], paired scoreLead −10.5 ± 4.7** (decisive on points, near-
 parity in Elo) at 759 MFLOP / 11.2 CPU-ms. The dw7pat data-scaling Elo curve: **−417 (48sh/8k)
 → −112 (300sh/30k) → −22 (600sh/60k)** — each doubling keeps paying; the frontier is now
