@@ -139,9 +139,21 @@ def _scale4():
     return [("s4_dw7pat1200", "b7c106nbt-pat", "data", m)]
 
 
+def _scale5():
+    # Fifth doubling on the champion + catch the 1567MF tier up to 1200sh. Launch with
+    # --data ignored per-config via flags (each run names its own --data), steps from flags too.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("s5_dw7pat2400", "b7c106nbt-pat", "data",
+         m + ["--data", "/workspace/distill/scale2400", "--max-steps", "240000"]),
+        ("s5_b10pat1200", "b10c128nbt-pat", "data",
+         m + ["--data", "/workspace/distill/scale1200", "--max-steps", "120000"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
-           "s3": _seed_var(), "s4": _scale4()}
+           "s3": _seed_var(), "s4": _scale4(), "s5": _scale5()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
