@@ -135,6 +135,11 @@ Pattern's val edge at b10 (0.012 / 0.005) is marginal but sign-consistent across
 seed-2 Stage-B (running) is the Elo replicate that decides it. Muon presumably contributes to
 the low seed variance (whitened updates); nice property for screening either way.
 
+**s4 val landed (06-10 ~03:15, 120k steps in 2.5h solo):** dw7pat 2.952 (300sh/30k) → 2.879
+(600sh/60k) → **2.819 (1200sh/120k)** — per-doubling −0.073/−0.060, mild deceleration only,
+and the 759-MFLOP net now has the **best val in the study** (b10pat 300sh: 2.862). Stage-B +
+head-to-head vs s1_b10pat next; data used so far ≈ 9.8M of 44M positions.
+
 **s3 seed-2 Stage-B (the Elo replicate):** dw7_sd2 −16.2±5.3 (Elo 0), b10nbt_sd2 **+5.8±6.0
 (Elo +100 [16,199])**, b10pat_sd2 +5.0±5.7 (Elo +66). Three lessons:
 1. **Train-seed variance in Elo ≈ ±10 scoreLead** (dw7 −25.8→−16.2, b10nbt −6.9→+5.8 across
