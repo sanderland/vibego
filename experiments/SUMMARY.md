@@ -19,8 +19,10 @@ dated files for full detail.
 - **policy_eval (raw-net agreement) does NOT predict game strength.** Against a *neutral* judge
   (zhizi/b40, fixing the old b18-teacher bias) our net's raw outputs ≈ b6c96 — yet it loses ~150
   Elo in games. Judge net quality by the **arena**, not policy_eval.
-- **Project goal: the FLOPs↔Elo Pareto frontier of small nets in the b6–b10 range** ([ROADMAP](ROADMAP.md)),
-  with single-thread CPU-ms as the second cost axis (in-browser engine target). Report Elo vs **both**.
+- **Project goal (updated 06-10): aim toward g170-b15c192-tier strength at much lower FLOPs** —
+  beating b6c96 was the first milestone (done: s4_dw7pat1200, +124 Elo at 759 MFLOP). Single-thread
+  CPU-ms is the second cost axis (in-browser engine target). Report Elo vs **both**. Re-anchor
+  Stage-B at g170 b10c128, then b15c192, as champions pass each tier (b6c96 anchor is saturating).
   Current frontier ([2026-06-09-d](2026-06-09-scale-elo-and-cpu-frontier.md)): b6c96nbt-pat (561 MF,
   Elo −124) → dw7/dw7pat (759 MF, −112) → **s1_b10pat (b10c128nbt-pat, 1567 MF, Elo +44 [−41,+134]
   — first positive point estimate vs the anchor, at −30% FLOPs vs its shape)**.
