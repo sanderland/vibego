@@ -204,11 +204,24 @@ def _explore_eramix3():
     return [("e4_b10mix30", "b10c128nbt-pat", "data", m + ["--data", "/workspace/distill/mix30"])]
 
 
+def _explore_attn_lr():
+    # e5a: FAIR-SHOT recipe sweep for the attention/mixer trunks — the a2 screen used the
+    # conv-tuned Muon 0.04 and 8k steps, which by our own sign-flip findings proves nothing.
+    # Quick lr triage at 48sh/8k (relative lr ranking is what 8k CAN answer), winners go to
+    # 300sh/30k + Elo in e5b. Transformers beat CNNs in chess (Lc0); Go at N=361 is open.
+    out = []
+    for arch, tag in [("b6c96-linat", "linat"), ("b6c96-rwkv", "rwkv"), ("b6c96-globmod", "globmod")]:
+        for lr in ["0.01", "0.02", "0.04"]:
+            out.append((f"e5a_{tag}_lr{lr.replace('0.', '')}", arch, "train",
+                        ["--optimizer", "muon", "--lr", lr]))
+    return out
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
            "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2(),
-           "e4": _explore_eramix3()}
+           "e4": _explore_eramix3(), "e5a": _explore_attn_lr()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
