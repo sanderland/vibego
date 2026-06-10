@@ -196,10 +196,19 @@ def _explore_eramix2():
     ]
 
 
+def _explore_eramix3():
+    # e4: era-mix30 CONFIRMED on dw7 (+13 sL pooled over 2 seeds, ~2.6σ, dose sweet spot at
+    # ~30%) — does it transfer to the champion's tier? b10pat on mix30 vs the s1_b10pat
+    # control (+1.7 ± 5.7 vs b6c96 anchor).
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [("e4_b10mix30", "b10c128nbt-pat", "data", m + ["--data", "/workspace/distill/mix30"])]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
-           "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2()}
+           "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2(),
+           "e4": _explore_eramix3()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

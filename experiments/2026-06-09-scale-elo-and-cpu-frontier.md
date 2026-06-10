@@ -206,10 +206,13 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
   in this study (pattern, depth-val, now tier) — screen verdicts are provisional, period.
 - Distance to goal: s5 vs g170e-b10c128 anchor = **−39.8 sL / Elo −291** (s4: −49.1/−372).
   FLOPs frontier: s4 holds 759 MF; s5 extends the strong end at 1567 MF / 17.75 CPU-ms.
-- **Era-mix Elo (vs b6c96 anchor): kata1-val misleads again** — e2_mix30 posts the best
-  dw7-tier scoreLead yet (**−7.7 ± 4.2** vs pooled control ≈ −21) despite its −0.16 val
-  penalty; but e2_mix10 went the other way (−34.5). One seed, contradictory dose-response →
-  e3 running (mix30 seed-2 replicate + mix50 dose point) before any conclusion.
+- **ERA-MIX 30% CONFIRMED — the first data-composition Elo win.** e3_mix30sd2 = −7.71 ± 5.3,
+  replicating e2_mix30's −7.7 ± 4.2 exactly; pooled (128 games, 2 seeds) **−7.7 ± 3.4 vs
+  control −21 ± 3.9 → +13 sL at ~2.6σ**, at zero extra compute, *despite* a kata1-val penalty
+  (val is domain-biased — never judge data composition by in-domain val). Dose-response is a
+  sweet spot: 10% ≈ noise/worse, **30% best**, 50% back to control (−23.3 ± 5.3). Mix-arm
+  kata1-val is also ~10× less seed-stable (3.119 vs 3.001 across seeds) — heterogeneous-data
+  exposure order matters. e4 running: does mix30 transfer to the b10pat champion tier?
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
