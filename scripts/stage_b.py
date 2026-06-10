@@ -87,6 +87,12 @@ def main():
         print(f"  [{cid}] playing {args.games}...", flush=True)
         res, log = run_match(ckpt, args.anchor, args.judge, args.games, args.visits,
                              args.judge_visits, args.workers, cid, early_stop=args.early_stop)
+        if res.get("rc") != 0:  # keep the evidence — engine crashes are otherwise invisible
+            fail = os.path.join(args.runs_dir, f"{cid}_stageb_fail.log")
+            with open(fail, "w") as fh:
+                fh.write(log)
+            print(f"  !! {cid}: match rc={res['rc']}, log -> {fail}; skipping registry row", flush=True)
+            continue
         base = dict(existing.get(cid, {"id": cid, "axis": "arch", "arch": "?"}))
         base.update({"id": cid, "stage": "B",
                      "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
