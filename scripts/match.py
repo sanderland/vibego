@@ -26,7 +26,8 @@ import os
 import statistics
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -76,6 +77,10 @@ def main():
     p.add_argument("--save-games", default=None, metavar="PATH",
                    help="append every game as a JSONL record (moves/komi/board/result) — the "
                         "raw material for on-policy position datasets (off-policy diagnostic)")
+    p.add_argument("--early-stop", action="store_true",
+                   help="sequential stopping on the paired scoreLead: after each completed pair "
+                        "(min 12), stop if |pair-mean| > 2.25·se (z widened for repeated looks). "
+                        "Clear gaps resolve in ~1/3 the games; null results still run to --games")
     args = p.parse_args()
 
     judge = _LockedJudge(args.judge) if args.judge else None
@@ -103,13 +108,44 @@ def main():
                     fh.write(json.dumps(rec) + "\n")
         return a
 
+    # Pair-based execution: a task plays the color-reversed pair (2k, 2k+1) so the sequential
+    # stopping rule sees whole pairs (game-concurrency is still bounded by --workers).
+    def play_pair(k: int):
+        return play(2 * k), play(2 * k + 1)
+
+    if args.games % 2:
+        print(f"note: --games {args.games} rounded down to {args.games - 1} (whole pairs)")
+    n_pairs = args.games // 2
+    results: dict[int, tuple] = {}
+    stopped = False
     try:
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            a_scores = list(ex.map(play, range(args.games)))
+            todo = list(range(n_pairs))
+            futs = {}
+            while todo or futs:
+                while todo and len(futs) < args.workers and not stopped:
+                    k = todo.pop(0)
+                    futs[ex.submit(play_pair, k)] = k
+                if not futs:
+                    break
+                done, _ = futures_wait(list(futs), return_when=FIRST_COMPLETED)
+                for f in done:
+                    results[futs.pop(f)] = f.result()
+                if args.early_stop and not stopped and len(results) >= 12:
+                    pm = [(a + b) / 2 for a, b in results.values()]
+                    m = sum(pm) / len(pm)
+                    se_p = statistics.pstdev(pm) / len(pm) ** 0.5
+                    if se_p > 0 and abs(m) > 2.25 * se_p:
+                        stopped = True
+                        todo.clear()
+                        with print_lock:
+                            print(f"  [early-stop] |{m:+.2f}| > 2.25*{se_p:.2f} "
+                                  f"after {len(results)} pairs", flush=True)
     finally:
         if judge is not None:
             judge.close()
 
+    a_scores = [v for k in sorted(results) for v in results[k]]
     n = len(a_scores)
     mean = sum(a_scores) / n
     se = statistics.pstdev(a_scores) / n ** 0.5 if n > 1 else float("nan")
