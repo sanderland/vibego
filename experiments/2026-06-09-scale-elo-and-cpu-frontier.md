@@ -147,6 +147,13 @@ arch shape. dw7pat Elo across data doublings: −417 → −112 → −22 → **
 3.04 → 2.952 → 2.879 → 2.819. The b6c96-class strength now costs ~b7c106nbt-pat inference.
 (Seed-noise caveat: ±10 sL; even at the unlucky end the verdict stays positive.)
 
+**Head-to-head (match.py direct, b18 judge, --early-stop's first live run):** s4_dw7pat1200
+beats s1_b10pat **+13.7 [1.4, 26.0] paired scoreLead (decisive, 32 pairs)** — the 759 MF champion
+dominates the 1567 MF tier outright (cheaper AND stronger head-on). Caveat: b10pat had 4× less
+training (300sh/30k); s5_b10pat1200 gives the matched-scale rematch. Early-stop triggered at 30
+pairs — direct paired h2h resolved at 64 games what two vs-anchor numbers (±10 sL seed noise +
+two ±5 CIs) could not.
+
 **s3 seed-2 Stage-B (the Elo replicate):** dw7_sd2 −16.2±5.3 (Elo 0), b10nbt_sd2 **+5.8±6.0
 (Elo +100 [16,199])**, b10pat_sd2 +5.0±5.7 (Elo +66). Three lessons:
 1. **Train-seed variance in Elo ≈ ±10 scoreLead** (dw7 −25.8→−16.2, b10nbt −6.9→+5.8 across
