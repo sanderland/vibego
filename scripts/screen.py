@@ -228,11 +228,23 @@ def _explore_attn_scale():
     ]
 
 
+def _explore_searched():
+    # e6: searched-target distillation A/B (expert iteration rung 1) — SAME 490k positions
+    # (shards 4-63), labels at b18 visits 1 (control) vs visits 32 (arm); identical steps and
+    # identical visits-1 val shards 0-3. Only the train-label quality differs.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("e6_v1", "b7c106nbt", "data", m + ["--data", "/workspace/distill/ab_v1"]),
+        ("e6_v32", "b7c106nbt", "data", m + ["--data", "/workspace/distill/ab_v32"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
            "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2(),
-           "e4": _explore_eramix3(), "e5a": _explore_attn_lr(), "e5b": _explore_attn_scale()}
+           "e4": _explore_eramix3(), "e5a": _explore_attn_lr(), "e5b": _explore_attn_scale(),
+           "e6": _explore_searched()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
