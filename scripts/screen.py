@@ -184,10 +184,22 @@ def _explore_eramix():
     ]
 
 
+def _explore_eramix2():
+    # e3: the e2_mix30 Elo signal (best dw7-tier sL, −7.7±4.2, despite a −0.16 kata1-val hit)
+    # is one seed and contradicts mix10's direction — replicate at seed 2 + extend the dose to
+    # 50% before believing it.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("e3_mix30sd2", "b7c106nbt", "data",
+         m + ["--data", "/workspace/distill/mix30", "--seed", "2"]),
+        ("e3_mix50", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix50"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
-           "e1": _explore_pattern_loss(), "e2": _explore_eramix()}
+           "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

@@ -78,6 +78,9 @@ dated files for full detail.
    the anchor, at 759 MFLOP / 11.2 CPU-ms (~⅓ the anchor-shape FLOPs). Scaling did it:
    −417 → −112 → −22 → +124 across four data/steps doublings (9.8M of 44M positions used —
    curve still not bent; next: 2400sh, then the full set needs user OK).
+   **CHAMPION UPDATE (06-10 evening): s5_b10pat1200 (1567 MF, val 2.712) beats s4 h2h +31.4 sL
+   / Elo +156** — the tier ordering FLIPS with data scale (dw7≥b10 at 300sh, b10≫dw7 at 1200sh).
+   s5 is −39.8 sL / −291 Elo from the g170e-b10c128 anchor (next goalpost en route to b15).
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
    run. Scale the b18-relabeled set well past 1M positions; train longer. (Open — most promising.)
 3. **Teacher ensembling** — average b18 + b28 + b40 soft policies (still 1 visit) as a

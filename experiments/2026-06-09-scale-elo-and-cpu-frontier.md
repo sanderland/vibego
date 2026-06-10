@@ -197,6 +197,21 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
   earlier OOM-killed a match — sequence match jobs from now on).
 - g170mix relabel capex: 352 shards / 2.9M positions / 13 GB at `distilled-g170mix/`.
 
+## s5 + era-mix Elo (06-10 evening) — NEW CHAMPION, tier order flips with scale, mix30 signal
+
+- **s5_b10pat1200 (b10c128nbt-pat, 1200sh/120k, val 2.712) beats s4 head-to-head:
+  +31.4 sL [14.3, 48.6], 71% wr, Elo +156** (early-stop, 19 pairs). New overall champion.
+  **The tier ordering flips with data scale** — at 300sh dw7-tier ≥ b10-tier; at 1200sh/120k
+  the b10 tier wins decisively. Scale-dependent arch ranking is now an established phenomenon
+  in this study (pattern, depth-val, now tier) — screen verdicts are provisional, period.
+- Distance to goal: s5 vs g170e-b10c128 anchor = **−39.8 sL / Elo −291** (s4: −49.1/−372).
+  FLOPs frontier: s4 holds 759 MF; s5 extends the strong end at 1567 MF / 17.75 CPU-ms.
+- **Era-mix Elo (vs b6c96 anchor): kata1-val misleads again** — e2_mix30 posts the best
+  dw7-tier scoreLead yet (**−7.7 ± 4.2** vs pooled control ≈ −21) despite its −0.16 val
+  penalty; but e2_mix10 went the other way (−34.5). One seed, contradictory dose-response →
+  e3 running (mix30 seed-2 replicate + mix50 dose point) before any conclusion.
+- e1_wpol2 Elo check running.
+
 ## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
 
 Downloaded the **final** g170e anchors (`g170e-b10c128-s1141M`, `g170e-b15c192-s1672M` →
