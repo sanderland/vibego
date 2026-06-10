@@ -217,11 +217,22 @@ def _explore_attn_lr():
     return out
 
 
+def _explore_attn_scale():
+    # e5b: the mixers' fair shot — best-lr arms (e5a: val nearly lr-flat, so lr was NOT what
+    # buried them; lr02 best for rwkv/globmod) at data scale, then Stage-B Elo. This is the
+    # test the a2 screen never ran; only Elo can acquit or convict (val ranks block types
+    # wrongly — founding lesson).
+    return [
+        ("e5b_rwkv", "b6c96-rwkv", "arch", ["--optimizer", "muon", "--lr", "0.02"]),
+        ("e5b_globmod", "b6c96-globmod", "arch", ["--optimizer", "muon", "--lr", "0.02"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
            "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2(),
-           "e4": _explore_eramix3(), "e5a": _explore_attn_lr()}
+           "e4": _explore_eramix3(), "e5a": _explore_attn_lr(), "e5b": _explore_attn_scale()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
