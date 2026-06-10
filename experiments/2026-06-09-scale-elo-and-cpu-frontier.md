@@ -178,6 +178,25 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
   (Caveat: at much larger data the val trend hints deep nets could eventually convert — recheck
   only at the final exploit scale, not in screening.)
 
+## Explore rounds e1/e2 — val reads (Elo pending; totals decoded per-head since loss weights differ)
+
+**e1 (pattern dig + loss weights, 300sh/30k, refs s_dw7 2.957/pol 2.404, s_nbtpat pol 2.423):**
+- `e1_pat5` (5×5 hashed table, 65k buckets): pol 2.451 ≈ no-pattern, worse than the 3×3.
+  **No win at 300sh; parked** (recheck only at exploit scale — bigger memory is plausibly more
+  data-hungry, the exact trap the 3×3 taught us, but it doesn't earn screen budget now).
+- `e1_wpol2` (policy weight 2.0): pol **2.380** (−0.024 vs ref, value/own unchanged) — small
+  real policy win; **Elo check queued** (policy is the Elo correlate).
+- `e1_wown0` (no ownership aux): pol 2.406 ≈ ref — the ownership aux is val-neutral at this
+  scale (KataGo's claim that aux helps isn't visible here; keep aux on, it's free).
+
+**e2 (era mixing, kata1 300sh + stratified g170 b6/b10/b15-era data, same 30k steps):**
+- `e2_mix10` (+33 g170sh): val 2.983 (−0.026 vs control); `e2_mix30` (+128): 3.119 (−0.16).
+- **kata1-val punishes mixing dose-dependently — but val is kata1-domain-only**, so this is
+  partly mechanical distribution shift, and this study's core lesson is val≠Elo. **Stage-B
+  running** (sequential chain after the s5 matches; the burst of concurrent engine spawns
+  earlier OOM-killed a match — sequence match jobs from now on).
+- g170mix relabel capex: 352 shards / 2.9M positions / 13 GB at `distilled-g170mix/`.
+
 ## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
 
 Downloaded the **final** g170e anchors (`g170e-b10c128-s1141M`, `g170e-b15c192-s1672M` →
