@@ -210,7 +210,8 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
   dw7-tier scoreLead yet (**−7.7 ± 4.2** vs pooled control ≈ −21) despite its −0.16 val
   penalty; but e2_mix10 went the other way (−34.5). One seed, contradictory dose-response →
   e3 running (mix30 seed-2 replicate + mix50 dose point) before any conclusion.
-- e1_wpol2 Elo check running.
+- e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
+  val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
 ## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
 
