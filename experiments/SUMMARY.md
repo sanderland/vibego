@@ -36,6 +36,12 @@ dated files for full detail.
   b10pat +3.4 sL / b10nbt −0.5 sL; b10nbt_sd2 Elo +100 [16,199], first positive CI).
 - **19×19 filtering is a wash** (fixed-19×19 val Δ ≤ 0.015 with sign flips, Elo −26.2 vs −25.8
   despite 1.45× more views per position) — keep the 31% non-19×19 data.
+- **ERA-MIX 30% is a confirmed Elo win (+13 sL, 2 seeds, ~2.6σ, free)**: blending ~30% stratified
+  g170 b6/b10/b15-era data (b18-relabeled) into recent kata1 beats recent-only at fixed compute —
+  despite a kata1-val penalty (in-domain val cannot judge data composition). Sweet spot ~30%
+  (10% noise, 50% back to control). Tier transfer to b10pat under test; fold into the final
+  exploit run. Explored-and-flat axes so far: depth (760 MF), loss weights, 5×5 pattern (at
+  300sh), 19×19 filter.
 - **Data+steps scaling converts directly into Elo, no bend yet** (dw7 −417 → −124 going 48sh/8k →
   300sh/30k; only 2.5M of 44M positions used). Keep scaling before spending on new data (but see
   the off-policy gate in [2026-06-09-c](2026-06-09-data-distribution-and-stats.md)).
