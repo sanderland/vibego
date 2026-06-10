@@ -154,6 +154,17 @@ training (300sh/30k); s5_b10pat1200 gives the matched-scale rematch. Early-stop 
 pairs — direct paired h2h resolved at 64 games what two vs-anchor numbers (±10 sL seed noise +
 two ±5 CIs) could not.
 
+## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
+
+Downloaded the **final** g170e anchors (`g170e-b10c128-s1141M`, `g170e-b15c192-s1672M` →
+`models/g170-b10c128.bin.gz` / `g170-b15c192.bin.gz`). Champion distance to the next tier:
+**s4_dw7pat1200 vs g170e-b10c128 = −49.1 sL [−60.9,−37.3], Elo −372** (early-stopped at 19
+pairs, 26 games saved). So the ladder reads: +124 over b6c96, ~−370 to b10c128, b15 above
+that. The b6c96→now climb cost 4 data doublings (~540 Elo); 2 more doublings remain before
+the full-set OK gate — the quality levers (searched targets, teacher ensemble, era mix,
+on-policy polish) will have to carry the rest. `stage_b.py` now takes `--anchor` (registry
+rows + frontier are filtered per-anchor) and `--early-stop`.
+
 **s3 seed-2 Stage-B (the Elo replicate):** dw7_sd2 −16.2±5.3 (Elo 0), b10nbt_sd2 **+5.8±6.0
 (Elo +100 [16,199])**, b10pat_sd2 +5.0±5.7 (Elo +66). Three lessons:
 1. **Train-seed variance in Elo ≈ ±10 scoreLead** (dw7 −25.8→−16.2, b10nbt −6.9→+5.8 across

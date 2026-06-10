@@ -30,7 +30,8 @@ WR_RE = re.compile(r"win rate:\s+([\d.]+)%")
 PAIR_RE = re.compile(r"PAIRED .*?:\s+([+-][\d.]+)\s+±\s+([\d.]+)\s+\[95% CI\s+([+-][\d.]+),\s+([+-][\d.]+)\].*?decisive=(\w+)")
 
 
-def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, workers, name):
+def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, workers, name,
+              early_stop=False):
     a = f"uv run python scripts/run_engine.py -model {ckpt} -early-stop"  # safe locked-winner stop
     b = f"{KATAGO} analysis -model {anchor_model} -config {CFG}"
     judge = f"{KATAGO} analysis -model {judge_model} -config {CFG}"
@@ -38,6 +39,8 @@ def run_match(ckpt, anchor_model, judge_model, games, visits, judge_visits, work
            "--a", a, "--a-name", name, "--b", b, "--b-name", "anchor",
            "--judge", judge, "--games", str(games), "--visits", str(visits),
            "--judge-visits", str(judge_visits), "--workers", str(workers)]
+    if early_stop:
+        cmd.append("--early-stop")
     out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
     log = out.stdout + "\n" + out.stderr
     m = ELO_RE.search(log)
@@ -65,22 +68,29 @@ def main():
     p.add_argument("--visits", type=int, default=48)
     p.add_argument("--judge-visits", type=int, default=256)
     p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--early-stop", action="store_true",
+                   help="sequential stopping in match.py (cheaper triage; slight |estimate| bias)")
     args = p.parse_args()
+
+    # anchor display/registry name from the model path ("b6c96.bin.gz" kept as "g170-b6c96"
+    # for continuity with pre---anchor rows)
+    stem = os.path.basename(args.anchor).removesuffix(".bin.gz")
+    anchor_name = "g170-b6c96" if stem == "b6c96" else stem
 
     existing = {r["id"]: r for r in reg.read_rows()}  # carry arch/flops/val_loss onto the B row
     cands = [c for c in args.candidates.split(",") if c]
-    print(f"Stage B: {len(cands)} candidates vs anchor (b6c96 @ {args.visits}v, b18 judge {args.judge_visits}v), {args.games} games each")
+    print(f"Stage B: {len(cands)} candidates vs anchor ({anchor_name} @ {args.visits}v, b18 judge {args.judge_visits}v), {args.games} games each")
     for cid in cands:
         ckpt = os.path.join(args.runs_dir, f"{cid}.pt")
         if not os.path.exists(ckpt):
             print(f"  !! {cid}: no checkpoint at {ckpt}; skip"); continue
         print(f"  [{cid}] playing {args.games}...", flush=True)
         res, log = run_match(ckpt, args.anchor, args.judge, args.games, args.visits,
-                             args.judge_visits, args.workers, cid)
+                             args.judge_visits, args.workers, cid, early_stop=args.early_stop)
         base = dict(existing.get(cid, {"id": cid, "axis": "arch", "arch": "?"}))
         base.update({"id": cid, "stage": "B",
                      "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                     "extra": {"games": args.games, "visits": args.visits, "anchor": "g170-b6c96"}})
+                     "extra": {"games": args.games, "visits": args.visits, "anchor": anchor_name}})
         for k in ("elo", "elo_lo", "elo_hi", "winrate", "score_lead", "score_lead_se",
                   "score_lead_lo", "score_lead_hi", "decisive"):
             if k in res:
@@ -91,8 +101,9 @@ def main():
               f"[{res.get('score_lead_lo')},{res.get('score_lead_hi')}] decisive={res.get('decisive')} "
               f"| Elo={res.get('elo')} [{res.get('elo_lo')},{res.get('elo_hi')}] (rc={res['rc']})", flush=True)
 
-    print("\n=== real frontier (FLOPs↓ vs paired scoreLead↑, vs anchor) ===")
-    rows = reg.read_rows()
+    print(f"\n=== real frontier (FLOPs↓ vs paired scoreLead↑, vs {anchor_name}) ===")
+    rows = [r for r in reg.read_rows()
+            if (r.get("extra") or {}).get("anchor", "g170-b6c96") == anchor_name]
     front, _ = reg.pareto(rows, "flops", "score_lead", minimize_x=True, minimize_y=False)
     for r in sorted(front, key=lambda r: r.get("flops", 0)):
         print(f"  {r['id']:14s} {r.get('arch'):14s} {r.get('flops')} MFLOP  "
