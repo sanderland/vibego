@@ -160,9 +160,22 @@ def _explore_depth():
             ["b9c92nbt", "b10c88nbt", "b12c78nbt", "b14c74nbt", "b16c68nbt"]]
 
 
+def _explore_pattern_loss():
+    # Explore round e1: (a) the 5×5 hashed pattern table at 6b (vs s_nbtpat's 3×3 = the A/B);
+    # (b) loss-weight arms on the dw7 reference — does policy-heavier or ownership-free training
+    # convert to Elo at scale? (References: s_dw7/s3_dw7_sd2.)
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("e1_pat5", "b6c96nbt-pat5", "arch", m),
+        ("e1_wpol2", "b7c106nbt", "train", m + ["--w-policy", "2.0"]),
+        ("e1_wown0", "b7c106nbt", "train", m + ["--w-ownership", "0.0"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
-           "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth()}
+           "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
+           "e1": _explore_pattern_loss()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

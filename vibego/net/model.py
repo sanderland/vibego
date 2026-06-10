@@ -34,6 +34,7 @@ class ModelConfig:
     gpool_channels: int = 32
     block_kinds: tuple[str, ...] = ("regular",) * 6
     pattern_embed: bool = False   # add a local-3x3-pattern lookup embedding to the stem (memory-for-FLOPs)
+    pattern_embed5: bool = False  # 5x5 variant: D4-canonical id hashed into a bucketed table
 
     @property
     def num_blocks(self) -> int:
@@ -337,6 +338,50 @@ class PatternEmbed(nn.Module):
         return emb.transpose(1, 2).reshape(B, -1, H, W)
 
 
+class PatternEmbed5(nn.Module):
+    """5×5 extension of PatternEmbed (the pattern dig): the D4-canonical raw base-3 id of each
+    cell's 5×5 {empty/own/opp} neighbourhood — exact canonicalization via min over the 8 symmetry
+    permutations, computed on the fly since 3^25 ids admit no canon table — feature-hashed into K
+    buckets (collisions act as regularization), low-dim embedding + zero-init 1×1 projection to C
+    (no-op until trained; proj learns first, then gradients flow into the table). ~K·D params of
+    memory at ~0 conv FLOPs (the projection is ~2 MFLOP)."""
+
+    OWN_CH, OPP_CH = 1, 2
+    K, D = 65536, 32
+
+    def __init__(self, c: int):
+        super().__init__()
+        transforms = [
+            lambda r, q: (r, q),         lambda r, q: (q, 4 - r),
+            lambda r, q: (4 - r, 4 - q), lambda r, q: (4 - q, r),
+            lambda r, q: (r, 4 - q),     lambda r, q: (4 - r, q),
+            lambda r, q: (q, r),         lambda r, q: (4 - q, 4 - r),
+        ]
+        pow3 = [3 ** i for i in range(25)]                     # max id 3^25-1 ≈ 8.5e11, fits int64
+        weights = []
+        for t in transforms:
+            p = [0] * 25
+            for i in range(25):
+                rr, cc = t(i // 5, i % 5)
+                p[rr * 5 + cc] = i
+            weights.append([pow3[j] for j in p])
+        self.register_buffer("w", torch.tensor(weights, dtype=torch.int64).view(8, 25, 1))
+        self.embed = nn.Embedding(self.K, self.D)
+        self.proj = nn.Conv2d(self.D, c, 1, bias=False)
+        nn.init.zeros_(self.proj.weight)
+
+    def forward(self, spatial):
+        B, _, H, W = spatial.shape
+        state = spatial[:, self.OWN_CH] + 2.0 * spatial[:, self.OPP_CH]            # (B,H,W) {0,1,2}
+        patches = Fnn.unfold(state.unsqueeze(1), kernel_size=5, padding=2).long()  # (B, 25, H*W)
+        ids = (patches.unsqueeze(1) * self.w).sum(2)                               # (B, 8, H*W)
+        canon = ids.min(1).values                                                  # D4-canonical id
+        # integer mix then bucket; int64 mul wraps, torch % gives non-negative remainders
+        h = torch.remainder((canon * -7046029254386353131) >> 23, self.K)
+        emb = self.embed(h).transpose(1, 2).reshape(B, self.D, H, W)
+        return self.proj(emb)
+
+
 class Model(nn.Module):
     def __init__(self, config: ModelConfig):
         super().__init__()
@@ -362,6 +407,7 @@ class Model(nn.Module):
                 raise ValueError(f"unknown block kind {kind!r}")
         self.blocks = nn.ModuleList(blocks)
         self.pattern_embed = PatternEmbed(c) if config.pattern_embed else None
+        self.pattern_embed5 = PatternEmbed5(c) if config.pattern_embed5 else None
         self.trunk_bn = nn.BatchNorm2d(c)
 
         hc = config.head_channels
@@ -386,6 +432,8 @@ class Model(nn.Module):
         x = self.stem(spatial) + self.global_fc(glob).view(B, -1, 1, 1)
         if self.pattern_embed is not None:
             x = x + self.pattern_embed(spatial)
+        if self.pattern_embed5 is not None:
+            x = x + self.pattern_embed5(spatial)
         for block in self.blocks:
             x = block(x)
         x = Fnn.relu(self.trunk_bn(x))
@@ -469,6 +517,9 @@ ARCHS: dict[str, ModelConfig] = {
     # champion and the 10b scale point.
     "b7c106nbt-pat":  ModelConfig(channels=106, block_kinds=_kinds(7, gpool=True, base="nbt"), pattern_embed=True),
     "b10c128nbt-pat": ModelConfig(channels=128, block_kinds=_kinds(10, gpool=True, base="nbt"), pattern_embed=True),
+    # pattern dig: 5×5 hashed table (65k buckets × d32 ≈ 2.1M table params — memory, not FLOPs)
+    # at 6b, the tier where pattern memory decisively pays; A/B against b6c96nbt-pat (3×3).
+    "b6c96nbt-pat5":  ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True, base="nbt"), pattern_embed5=True),
 }
 
 
