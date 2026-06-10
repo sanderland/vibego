@@ -25,9 +25,13 @@ dated files for full detail.
   Elo −124) → dw7/dw7pat (759 MF, −112) → **s1_b10pat (b10c128nbt-pat, 1567 MF, Elo +44 [−41,+134]
   — first positive point estimate vs the anchor, at −30% FLOPs vs its shape)**.
 - **pattern_embed (3×3 canonical lookup table, ~0 FLOPs / ~2% CPU-ms) is a decisive Elo win at 6b
-  at data scale** (−48.6 → −32.6 paired scoreLead) but **tier-dependent**: nothing on dw7, +8.6 ± 7.5
-  (suggestive) on b10. Never hurts, ~free → default-on at 6b. At 48-shard screen scale it looked
-  like a −669 disaster — **small-data screens can flip the sign of memory-heavy archs**.
+  at data scale** (−48.6 → −32.6 paired scoreLead) but **6b only** — no effect at dw7, and the
+  b10 seed-1 "+8.6" did not replicate at seed 2. Default-on at 6b. At 48-shard screen scale it
+  looked like a −669 disaster — **small-data screens can flip the sign of memory-heavy archs**.
+- **Train-seed variance: val ±0.003–0.011 (tiny) but Elo ±~10 scoreLead at 64 games (large)** —
+  single-seed Stage-B deltas under ~15 sL are noise; pool seeds or use SPRT-scale game counts
+  for close calls. The b10 tier is at-or-above anchor parity **robustly across seeds** (pooled
+  b10pat +3.4 sL / b10nbt −0.5 sL; b10nbt_sd2 Elo +100 [16,199], first positive CI).
 - **19×19 filtering is a wash** (fixed-19×19 val Δ ≤ 0.015 with sign flips, Elo −26.2 vs −25.8
   despite 1.45× more views per position) — keep the 31% non-19×19 data.
 - **Data+steps scaling converts directly into Elo, no bend yet** (dw7 −417 → −124 going 48sh/8k →

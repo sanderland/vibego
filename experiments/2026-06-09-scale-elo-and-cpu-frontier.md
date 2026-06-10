@@ -135,6 +135,18 @@ Pattern's val edge at b10 (0.012 / 0.005) is marginal but sign-consistent across
 seed-2 Stage-B (running) is the Elo replicate that decides it. Muon presumably contributes to
 the low seed variance (whitened updates); nice property for screening either way.
 
+**s3 seed-2 Stage-B (the Elo replicate):** dw7_sd2 −16.2±5.3 (Elo 0), b10nbt_sd2 **+5.8±6.0
+(Elo +100 [16,199])**, b10pat_sd2 +5.0±5.7 (Elo +66). Three lessons:
+1. **Train-seed variance in Elo ≈ ±10 scoreLead** (dw7 −25.8→−16.2, b10nbt −6.9→+5.8 across
+   seeds) — as large as the 64-game CI. Single-seed single-run Stage-B differences under
+   ~15 sL are NOT conclusions. (Val seed noise is 30× smaller — val is the stable metric,
+   Elo the noisy-but-real one.) Multi-seed pooling or SPRT-style game counts needed for
+   close calls; bumps the queued round-robin/Bayesian item.
+2. **Pattern at b10 does NOT replicate** (seed-2 Δ = −0.8 sL vs seed-1's +8.6). Final verdict:
+   pattern_embed is decisive at 6b, absent at dw7/b10. Default-on at 6b only.
+3. **The b10 tier is at-or-above the anchor robustly**: pooled over seeds (128 games/config),
+   b10nbt ≈ −0.5 sL, b10pat ≈ +3.4 sL; b10nbt_sd2 posts the study's first positive-CI Elo.
+
 **s2 Stage-B: Elo −22 [−110,+64], paired scoreLead −10.5 ± 4.7** (decisive on points, near-
 parity in Elo) at 759 MFLOP / 11.2 CPU-ms. The dw7pat data-scaling Elo curve: **−417 (48sh/8k)
 → −112 (300sh/30k) → −22 (600sh/60k)** — each doubling keeps paying; the frontier is now
