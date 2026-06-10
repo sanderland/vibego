@@ -140,6 +140,13 @@ the low seed variance (whitened updates); nice property for screening either way
 and the 759-MFLOP net now has the **best val in the study** (b10pat 300sh: 2.862). Stage-B +
 head-to-head vs s1_b10pat next; data used so far ≈ 9.8M of 44M positions.
 
+**s4 Stage-B — THE STUDY GOAL, DECISIVELY: s4_dw7pat1200 beats the real g170-b6c96 anchor**
+with paired scoreLead **+14.4 ± 6.1 [2.5, 26.3] (decisive)** and **Elo +124 [40, 227]** (both
+CIs positive) at **759 MFLOP / 11.2 single-thread CPU-ms** — ~⅓ the FLOPs of the anchor's
+arch shape. dw7pat Elo across data doublings: −417 → −112 → −22 → **+124**; val
+3.04 → 2.952 → 2.879 → 2.819. The b6c96-class strength now costs ~b7c106nbt-pat inference.
+(Seed-noise caveat: ±10 sL; even at the unlucky end the verdict stays positive.)
+
 **s3 seed-2 Stage-B (the Elo replicate):** dw7_sd2 −16.2±5.3 (Elo 0), b10nbt_sd2 **+5.8±6.0
 (Elo +100 [16,199])**, b10pat_sd2 +5.0±5.7 (Elo +66). Three lessons:
 1. **Train-seed variance in Elo ≈ ±10 scoreLead** (dw7 −25.8→−16.2, b10nbt −6.9→+5.8 across

@@ -71,9 +71,11 @@ dated files for full detail.
 > Parameter-Golf borrows, transformer/Muon/weight-tying, etc.). The list below is the older
 > net-quality thread, still valid.
 >
-1. **Make our own distilled net beat b6c96** — ~~the main open goal~~ **parity reached 2026-06-09**:
-   s_b10nbt (300sh/30k, Muon) = Elo 0 [−87,+87] vs the anchor at −30% FLOPs. Open: *beat* it
-   decisively, and reach parity in the ≤800 MFLOP tier (best: −124, s1 combos running).
+1. **Make our own distilled net beat b6c96** — **DONE DECISIVELY 2026-06-10**: s4_dw7pat1200
+   (b7c106nbt-pat, 1200sh/120k, Muon) = **scoreLead +14.4 [2.5,26.3] / Elo +124 [40,227]** vs
+   the anchor, at 759 MFLOP / 11.2 CPU-ms (~⅓ the anchor-shape FLOPs). Scaling did it:
+   −417 → −112 → −22 → +124 across four data/steps doublings (9.8M of 44M positions used —
+   curve still not bent; next: 2400sh, then the full set needs user OK).
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
    run. Scale the b18-relabeled set well past 1M positions; train longer. (Open — most promising.)
 3. **Teacher ensembling** — average b18 + b28 + b40 soft policies (still 1 visit) as a
