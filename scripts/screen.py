@@ -172,10 +172,22 @@ def _explore_pattern_loss():
     ]
 
 
+def _explore_eramix():
+    # Explore round e2: era-mixed data (stratified g170 b6c96/b10c128/b15c192-era sample, b18-
+    # relabeled) appended to the kata1 scale set at ~10% / ~30% of shards, same 30k steps —
+    # does era diversity beat pure recent-strong data? Controls: s_dw7/s3_dw7_sd2. Val shards
+    # 0-3 are the same kata1 files in every arm (zmix_ names sort after shard_).
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("e2_mix10", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix10"]),
+        ("e2_mix30", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix30"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
-           "e1": _explore_pattern_loss()}
+           "e1": _explore_pattern_loss(), "e2": _explore_eramix()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
