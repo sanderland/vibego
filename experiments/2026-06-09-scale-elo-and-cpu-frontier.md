@@ -212,7 +212,11 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
   (val is domain-biased — never judge data composition by in-domain val). Dose-response is a
   sweet spot: 10% ≈ noise/worse, **30% best**, 50% back to control (−23.3 ± 5.3). Mix-arm
   kata1-val is also ~10× less seed-stable (3.119 vs 3.001 across seeds) — heterogeneous-data
-  exposure order matters. e4 running: does mix30 transfer to the b10pat champion tier?
+  exposure order matters. **e4 ANSWERED: it transfers** —
+  e4_b10mix30 = +11.2 ± 4.7 sL [2.1, 20.4] (decisive) vs control s1_b10pat +1.7 ± 5.7; the
+  +9.5 ± 7.4 delta matches the dw7-tier effect in size and direction. Across two tiers and
+  three seeds, **era-mix30 ≈ +10 sL consistently → into the champion recipe** for the final
+  exploit run (b10pat + mix30 + max data, pending the remaining explore legs).
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
