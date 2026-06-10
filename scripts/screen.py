@@ -132,9 +132,16 @@ def _seed_var():
     ]
 
 
+def _scale4():
+    # Fourth scaling doubling on the champion arch (Elo curve −417/−112/−22 still unbent).
+    # Run with --data /workspace/distill/scale1200 --steps 120000 (val shards 0–3 unchanged).
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [("s4_dw7pat1200", "b7c106nbt-pat", "data", m)]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
-           "s3": _seed_var()}
+           "s3": _seed_var(), "s4": _scale4()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
