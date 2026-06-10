@@ -151,9 +151,18 @@ def _scale5():
     ]
 
 
+def _explore_depth():
+    # EXPLORE (user 06-10: "data doubling is exploit/final; explore is thin"): the ~760-MF depth
+    # ladder at data scale (300sh/30k — the established good-signal point; 8k screens are known
+    # to flip verdicts). Reference rows: s_dw7 / s3_dw7_sd2 (b7), a2's 8k-step verdicts.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [(f"e0_{a}", a, "arch", m) for a in
+            ["b9c92nbt", "b10c88nbt", "b12c78nbt", "b14c74nbt", "b16c68nbt"]]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
-           "s3": _seed_var(), "s4": _scale4(), "s5": _scale5()}
+           "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")

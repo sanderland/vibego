@@ -442,6 +442,12 @@ ARCHS: dict[str, ModelConfig] = {
     "b8c102nbt":      ModelConfig(channels=102, block_kinds=_kinds(8,  gpool=True, base="nbt")),
     "b9c92nbt":       ModelConfig(channels=92,  block_kinds=_kinds(9,  gpool=True, base="nbt")),
     "b10c88nbt":      ModelConfig(channels=88,  block_kinds=_kinds(10, gpool=True, base="nbt")),
+    # deep extension of the dw study (745-754 MF, ~1.07M params — still matched to the old6b
+    # budget): does depth keep paying at DATA SCALE (the 8k-step screen said no past b7, but
+    # small-data screens have lied before), and is the b15-shaped slimmed trunk the right bet?
+    "b12c78nbt":      ModelConfig(channels=78,  block_kinds=_kinds(12, gpool=True, base="nbt")),
+    "b14c74nbt":      ModelConfig(channels=74,  block_kinds=_kinds(14, gpool=True, base="nbt")),
+    "b16c68nbt":      ModelConfig(channels=68,  block_kinds=_kinds(16, gpool=True, base="nbt")),
     # --- global-mixing study: regular conv backbone, every-3rd block is the cheap global op
     # (gpool vs linearized-attention vs RWKV-style mixing). Same conv locality, swapped global
     # primitive — a direct FLOPs↔Elo comparison of the candidate trunks in experiments/IDEAS.md.
