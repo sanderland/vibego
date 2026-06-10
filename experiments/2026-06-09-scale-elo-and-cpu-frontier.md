@@ -154,6 +154,30 @@ training (300sh/30k); s5_b10pat1200 gives the matched-scale rematch. Early-stop 
 pairs — direct paired h2h resolved at 64 games what two vs-anchor numbers (±10 sL seed noise +
 two ±5 CIs) could not.
 
+## Explore round e0 — the depth axis at data scale is CLOSED (val pays, Elo doesn't)
+
+Pivot per user (06-10): "data doubling is exploit/final; explore is thin." First explore axis:
+the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c74/b16c68nbt).
+
+| net | MFLOP | CPU ms | val | Stage-B sL / Elo (vs b6c96) |
+|---|---|---|---|---|
+| b7c106nbt (ref, 2 seeds) | 759 | 10.98 | 2.957/2.954 | −25.8 / −16.2 |
+| e0_b9c92nbt | 769 | 11.44 | 2.979 | — |
+| e0_b10c88nbt | 762 | 11.98 | 2.959 | — |
+| e0_b12c78nbt | 745 | 12.24 | 2.944 | −24.2 / −203 |
+| e0_b14c74nbt | 754 | 13.15 | **2.940** | −28.3 / −114 |
+| e0_b16c68nbt | 749 | 14.08 | **2.940** | −16.7 / −54 |
+
+- **Val improves monotonically with depth past b10, plateauing at b14–b16 (−0.017 vs b7)** —
+  the 8k screen's "depth stops at b7" was wrong at scale (again: small-data screens mislead).
+- **But the Elo is FLAT**: all three deep nets sit inside the dw7 seed band, and the decisive
+  test — FLOPs-matched h2h **b14c74 vs s_dw7: −5.3 ± 6.1 [−17.3, +6.7], 64 games, no diff**
+  (point estimate *against* depth). Third instance of **val≠Elo across an axis** (after
+  block-type and pattern). Depth also costs **+0.5 CPU-ms/block** (b16 = +28% vs b7).
+- **Verdict: b7 stays the ~760-MF pick on both cost axes; depth axis closed at this scale.**
+  (Caveat: at much larger data the val trend hints deep nets could eventually convert — recheck
+  only at the final exploit scale, not in screening.)
+
 ## Re-anchoring (06-10, goal updated: aim toward g170-b15c192-tier strength at low FLOPs)
 
 Downloaded the **final** g170e anchors (`g170e-b10c128-s1141M`, `g170e-b15c192-s1672M` →
