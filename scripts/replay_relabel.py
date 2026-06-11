@@ -176,7 +176,12 @@ def main():
                     stop = True
                     break
             gtp_moves.append([color, "pass" if xy is None else xy_to_gtp(xy, size)])
-            board.play(side, xy)
+            try:
+                board.play(side, xy)
+            except ValueError:
+                # rules gap (g170 plays situational-superko/button variants our Board doesn't
+                # model) — truncate this game, keep the samples already emitted from it
+                break
     drain(0)
     flush_shard(force=True)
     teacher.close()
