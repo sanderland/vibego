@@ -220,6 +220,23 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
+## Searched-target distillation, rung 1 (e6) — a surprise with a mechanism
+
+Designed as visits-1 vs visits-32 labels on the same 490k positions. **Instrumentation
+correction:** KataGo analysis "policy" is the raw prior regardless of maxVisits (verified:
+target entropies identical, 1.666/1.665) — so e6 actually tested **search-improved
+value/score/ownership targets with unchanged policy**. Result: they **hurt, decisively** —
+vs anchor −74.4 ± 5.6 vs control −53.2 ± 8.5; direct h2h **−38.7 sL [−58.6, −18.7], 24% wr**.
+
+Proposed mechanism: relabeling queries from STONES ONLY (no history) → ko/capture context is
+approximate; a 1-visit eval inherits that error statically, but a 32-visit search explores
+through it and compounds it into the root values. Implication: **searched distillation targets
+require full-context replay relabeling** (query the teacher with the real move sequence — the
+g170 zips ship .sgfs, and match.py --save-games records ours). `relabel.py --policy-temp` now
+builds true searched-POLICY targets from moveInfos visit counts; e7 (running) completes the
+three-way raw-prior / searched-value / searched-policy+value under the same history-less
+caveat, then the replay-relabel path is the v2.
+
 ## Mixer fair trial (e5, closing the a2 injustice) — viable mid-pack, not frontier
 
 The a2 screen condemned linat/rwkv/globmod on 8k-step val under a conv-tuned recipe — by our
