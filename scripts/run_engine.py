@@ -54,6 +54,9 @@ def parse_args():
                    help="number of root candidates sampled without replacement (gumbel mode)")
     p.add_argument("-gumbel-seed", type=int, default=0,
                    help="base seed for the per-move Gumbel noise (mixed with the turn number)")
+    p.add_argument("-gumbel-c-scale", type=float, default=1.0,
+                   help="sigma(q) scale on raw search utility (paper's c_scale; decisions "
+                        "between sampled candidates are Q-driven at 1.0 — measured best)")
     args, _ignored = p.parse_known_args()
     return args
 
@@ -87,7 +90,7 @@ def main():
     mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log,
                    "early_stop": args.early_stop, "early_stop_min_frac": args.early_stop_min_frac,
                    "gumbel_root": args.gumbel, "gumbel_m": args.gumbel_m,
-                   "gumbel_seed": args.gumbel_seed}
+                   "gumbel_seed": args.gumbel_seed, "gumbel_c_scale": args.gumbel_c_scale}
     engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,
                             leaf_batch=args.leaf_batch, lcb_stdevs=args.lcb_stdevs,
                             mcts_kwargs=mcts_kwargs)

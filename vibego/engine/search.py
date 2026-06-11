@@ -221,7 +221,14 @@ class MCTS:
         self.gumbel_root = gumbel_root
         self.gumbel_m = gumbel_m
         self.gumbel_c_visit = gumbel_c_visit   # paper's c_visit
-        self.gumbel_c_scale = gumbel_c_scale   # paper's c_scale
+        # c_scale: sigma is ~(50 + maxN) * c_scale * q on RAW utility, so at 1.0 the q term
+        # dominates g + log pi whenever Q gaps exceed ~0.05 utility. That is correct here: the
+        # candidates' g + log pi are near-ties by construction (top-k of the same noisy score),
+        # so the prior's information lives in WHO got sampled and the decisions between them
+        # must be Q-driven. Measured at m=4/32 visits vs plain PUCT: c_scale 0.1
+        # (prior-dominant, i.e. ~temperature-1 policy sampling) was -149 scoreLead; 1.0 with
+        # honest Q (see the forced-batch cap in gumbel_search) recovers to PUCT-level play.
+        self.gumbel_c_scale = gumbel_c_scale
         self.gumbel_seed = gumbel_seed         # deterministic noise; callers may vary per move
         self.gumbel_ranking: list[Node] | None = None  # set by gumbel_search: best move first
 
@@ -377,7 +384,8 @@ class MCTS:
     def _sigma(self, q: float, max_n: int) -> float:
         """The paper's monotone Q transform: sigma(q) = (c_visit + max_b N(b)) * c_scale * q.
         `q` must be in the ROOT mover's perspective (a root child's mean is the opponent's, so
-        callers negate child.q())."""
+        callers negate child.q()). `q` here is RAW search utility (not [0,1]-normalized); see
+        the gumbel_c_scale comment in __init__ for how the scale was validated."""
         return (self.gumbel_c_visit + max_n) * self.gumbel_c_scale * q
 
     def _gumbel_rank(self, root: Node, cands: list[tuple]):
@@ -407,6 +415,18 @@ class MCTS:
         logp = np.log(np.maximum([ch.P for ch in children], 1e-30))
         m = min(self.gumbel_m, len(children))
         idx, g = gumbel_top_k(logp, m, rng)
+        idx = [int(i) for i in idx]
+        # Play-strength guard: always include the policy-greedy move among the candidates.
+        # The final argmax can only pick from what was sampled, and with small m and a flat
+        # policy the gumbel-top-m sometimes contains no strong move at all (a measured tail
+        # loss source, secondary to the forced-batch Q poison below: e.g. a 0.97-prior move
+        # absent while the search chose among four ~noise candidates). Replacing the weakest
+        # sample with argmax-prior is free when the policy is sharp (it is almost always
+        # sampled anyway) and otherwise floors the move choice at greedy-policy quality,
+        # with searched Q deciding between greedy and the sampled alternatives.
+        top = int(np.argmax(logp))
+        if top not in idx:
+            idx[-1] = top
         cands = [(children[i], float(g[i]), float(logp[i])) for i in idx]
         eliminated: list[tuple] = []
         done = 0
@@ -417,9 +437,18 @@ class MCTS:
             for (ch, _g, _lp), n in zip(cands, alloc):
                 given = 0
                 while given < n:
-                    # First visit to an unexpanded candidate goes alone: a forced batch > 1
-                    # would just re-select the same unexpanded leaf (wasted duplicate visits).
-                    b = 1 if not ch.expanded else min(batch_size, n - given)
+                    # Batch width is capped by the candidate's ESTABLISHED visits (the
+                    # adaptive_batch principle): every leaf in a forced batch is selected
+                    # blind under virtual loss, so a batch wider than the subtree pushes
+                    # into the opponent's 4th..8th-best replies and averages their PASSIVE
+                    # evals into the candidate's Q. Measured: a 0.009-prior trick move went
+                    # from raw eval -1.09 to Q=+0.02 after 12 visits in 1/3/8-wide batches
+                    # (its narrow refutation diluted away) and got played over a 0.97-prior
+                    # move — the per-candidate poison behind the m-inversion blowout, since
+                    # smaller m means larger per-candidate allocations and wider batches.
+                    # (First visit to an unexpanded candidate also goes alone: a wider
+                    # forced batch would just re-select the same unexpanded leaf.)
+                    b = 1 if not ch.expanded else min(batch_size, n - given, max(1, ch.N))
                     added = self._step_forced(root, ch, b)
                     given += added
                     done += added
