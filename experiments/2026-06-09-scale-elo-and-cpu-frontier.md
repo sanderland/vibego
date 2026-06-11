@@ -220,6 +220,16 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
+## Era-source ablation (e8) — the WEAK eras carry the era-mix gain
+
+kata1-300sh + era-PURE g170 blocks (single seeds, vs control −21 pooled / full-mix30 −7.7):
+**b6-era −5.1 ± 4.8 (17% dose!) ≈ b15-era −7.1 ± 6.5 ≈ full mix; b10-era −21.7 ± 6.2 = no
+gain.** The weakest, most-diverse era matches the full effect at the lowest dose → **position
+diversity is the active ingredient** (not label strength, not era recency; mid-strength b10-era
+positions plausibly overlap most with what kata1 already covers). Exploit data plan: weight
+b6+b15 eras, skip b10 (20 more zips downloading). s6 champion-polish (continue-from-ckpt on
+mix1200, +60k) training.
+
 ## Searched-target distillation, rung 1 (e6) — a surprise with a mechanism
 
 Designed as visits-1 vs visits-32 labels on the same 490k positions. **Instrumentation
