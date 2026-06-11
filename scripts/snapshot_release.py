@@ -24,7 +24,8 @@ OUT = os.path.join(REPO, "released")
 
 # (run id, mode) — mode "full" keeps optimizer (resume-capable), "model" strips to weights+meta
 SELECTION = [
-    ("s6_b10pat_mixcont", "full"),    # overall champion (b10pat + era-mix polish)
+    ("s8_b10pat_final", "full"),      # overall champion (b10pat, era-mix from scratch, 14.8M pos)
+    ("s6_b10pat_mixcont", "full"),    # prior champion (polish lineage exemplar)
     ("s4_dw7pat1200", "full"),        # 759 MF champion (until s7 supersedes)
     ("s5_b10pat1200", "model"),       # pre-polish champion (polish-delta baseline)
     ("s2_dw7pat600", "model"),        # dw7pat scaling-curve point

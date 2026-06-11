@@ -251,6 +251,16 @@ positions plausibly overlap most with what kata1 already covers). Exploit data p
 b6+b15 eras, skip b10 (20 more zips downloading). s6 champion-polish (continue-from-ckpt on
 mix1200, +60k) training.
 
+## s8: the exploit run — new champion by h2h, but the tier saturates short of b10c128
+
+b10c128nbt-pat from scratch on kata1-1400sh + 409 era shards (23% mix, 14.8M pos, 180k steps):
+val **2.711** (best from-scratch; s6 continue: 2.704). **h2h vs s6: +14.2 ± 8.1 [−1.7,+30.0],
+63% wr (s8 = champion by direct measurement, not decisive).** Vs g170e-b10c128 (full 64, no
+early-stop): **−20.4 ± 3.7 sL / Elo −255 [−398,−161]** ≈ s6's −17.4 ± 5.2. The from-scratch
+exploit run matched-not-beat the cheap polish, and **the 1567-MF tier saturates ~20 sL short
+of b10c128 parity at ~15M positions** — the remaining gap is a data problem (next: more
+weak-era data, the proven lever), not a steps problem.
+
 ## Gumbel root search at low visits (task 11) — implemented, debugged, and PUCT still wins
 
 Implemented Gumbel-AZ root search (gumbel-top-k + sequential halving + completed-Q,
