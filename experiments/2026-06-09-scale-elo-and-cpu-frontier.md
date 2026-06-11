@@ -233,9 +233,13 @@ approximate; a 1-visit eval inherits that error statically, but a 32-visit searc
 through it and compounds it into the root values. Implication: **searched distillation targets
 require full-context replay relabeling** (query the teacher with the real move sequence — the
 g170 zips ship .sgfs, and match.py --save-games records ours). `relabel.py --policy-temp` now
-builds true searched-POLICY targets from moveInfos visit counts; e7 (running) completes the
-three-way raw-prior / searched-value / searched-policy+value under the same history-less
-caveat, then the replay-relabel path is the v2.
+builds true searched-POLICY targets from moveInfos visit counts (verified sharper: H 1.093
+vs 1.665). **e7 three-way closed**: searched policy+value = −12.7 ± 8.4 vs raw prior (not
+decisive; wr Elo −89 [−185,−4]) — consistent searched targets recover most of the
+searched-value-only damage (−38.7) but still don't beat plain visits-1 distillation.
+**Rung-1 verdict: at 32 visits on history-less positions, searched targets don't pay; raw
+soft prior wins.** v2 (open): replay relabeling with full move history — the context the
+mechanism says search needs.
 
 ## Mixer fair trial (e5, closing the a2 injustice) — viable mid-pack, not frontier
 
