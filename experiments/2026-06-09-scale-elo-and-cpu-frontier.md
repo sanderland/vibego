@@ -220,6 +220,16 @@ the ~750-MF FLOPs/param-matched depth ladder at 300sh/30k (new archs b12c78/b14c
 - e1_wpol2 Elo: **−18.4 ± 5.2 sL — inside the control band** (dw7 seeds −25.8/−16.2). The
   val-policy gain doesn't convert; **loss-weight axis closed** at single-seed resolution.
 
+## s6: era-mix champion polish — +120 Elo from a 60k-step continue
+
+Recipe: `--resume` s5_b10pat1200 (120k on kata1-1200sh) on mix1200 (kata1 + 22% era-mix) for
++60k steps (cosine warm-restart ~0.013→0.004). Results: **h2h beats s5 +18.6 sL [5.9, 31.3],
+67% wr, Elo +120** (decisive, 21 pairs); **vs g170e-b10c128 anchor −17.4 ± 5.2 / Elo −70
+[−193, +36]** (s5 was −39.8/−291 — ~+220 anchor-Elo). val 2.704 ≈ s5's 2.712 despite the
+off-domain mix share (val again blind to a large Elo gain). **Cheap-polish recipe established:
+resume champion + diversity data ≈ +120 Elo at ⅓ retrain cost.** s7 (running) applies it to
+the 759-MF champion s4. The b10c128 anchor is now within one more such step.
+
 ## Era-source ablation (e8) — the WEAK eras carry the era-mix gain
 
 kata1-300sh + era-PURE g170 blocks (single seeds, vs control −21 pooled / full-mix30 −7.7):
