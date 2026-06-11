@@ -104,3 +104,10 @@ katago_cuda128/
 experiments/registry.jsonl
 experiments/frontier.png
 experiments/*.png
+
+# curated survival snapshots (models + artifacts chosen for post-pod continuation) — the ONLY
+# binaries tracked; everything else in /workspace dies with the pod credits
+!released/
+!released/*.pt
+!released/registry.jsonl
+!released/frontier.png
