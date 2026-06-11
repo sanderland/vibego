@@ -251,6 +251,18 @@ positions plausibly overlap most with what kata1 already covers). Exploit data p
 b6+b15 eras, skip b10 (20 more zips downloading). s6 champion-polish (continue-from-ckpt on
 mix1200, +60k) training.
 
+## Replay relabeling closes the searched-target question (r1, task 12)
+
+`replay_relabel.py`: walk game records (g170 .sgfs / match JSONL), query the teacher with the
+real move prefix (true ko/history context), SIDETOMOVE targets, history channels populated
+(verified by smoke checks incl. ownership perspective; odd stride so sampled colors alternate;
+games truncate at rules-gap moves). A/B on 450k identical replayed positions, 12k steps,
+shared raw-prior val: **searched policy+value WITH history = +2.8 ± 5.6 [−8.2, +13.8] vs raw
+prior — parity** (64 games). Full picture: −38.7 (history-less value-searched) → −12.7
+(history-less consistent-searched) → **±0 (context-correct searched)**, at 32× label cost.
+**Verdict: context confirmed as the failure mechanism; visits-1 soft-prior distillation is the
+per-FLOP optimum. Searched targets buy nothing at 32 visits even done right.**
+
 ## Searched-target distillation, rung 1 (e6) — a surprise with a mechanism
 
 Designed as visits-1 vs visits-32 labels on the same 490k positions. **Instrumentation
