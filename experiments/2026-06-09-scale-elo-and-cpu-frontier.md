@@ -230,6 +230,17 @@ off-domain mix share (val again blind to a large Elo gain). **Cheap-polish recip
 resume champion + diversity data ≈ +120 Elo at ⅓ retrain cost.** s7 (running) applies it to
 the 759-MF champion s4. The b10c128 anchor is now within one more such step.
 
+## s7: the polish does NOT transfer down-tier — capacity-bound vs data-bound regimes
+
+Same recipe as s6 on the 759-MF champion: s7 ties s4 exactly (h2h −3.1 ± 5.9, 64 games; vs
+b10c128 anchor −57.3/−372 ≈ s4's −49.1/−372; val 2.813 ≈ 2.819). Era-mix polish: **+120 Elo
+at 2.6M params, ~0 at 1.4M.** dw7 has now gained from NEITHER pattern memory NOR era
+diversity, while 6b (pattern) and b10 (diversity, polish) both did. Hypothesis: **≤1.5M-param
+nets are capacity-bound at this data scale (better data can't help); ~2.6M is data-bound
+(diversity pays).** Single seeds each, but the asymmetry is consistent across three
+interventions. Corollary worth one arm someday: add cheap capacity (bigger pattern table) at
+the small tiers instead of better data. Champion standings unchanged: s6 overall, s4 at 759 MF.
+
 ## Era-source ablation (e8) — the WEAK eras carry the era-mix gain
 
 kata1-300sh + era-PURE g170 blocks (single seeds, vs control −21 pooled / full-mix30 −7.7):
