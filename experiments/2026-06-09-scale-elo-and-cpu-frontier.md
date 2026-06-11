@@ -251,6 +251,24 @@ positions plausibly overlap most with what kata1 already covers). Exploit data p
 b6+b15 eras, skip b10 (20 more zips downloading). s6 champion-polish (continue-from-ckpt on
 mix1200, +60k) training.
 
+## Gumbel root search at low visits (task 11) — implemented, debugged, and PUCT still wins
+
+Implemented Gumbel-AZ root search (gumbel-top-k + sequential halving + completed-Q,
+`-gumbel[-m]` flags, default-off bit-identical; commits 5ed0507/758ef72). First A/B looked
+catastrophic with a tell-tale inversion (m16 −36 / m8 −79 / m4 −86 sL vs PUCT @32v): root
+cause was NOT the algorithm but **blind forced batches** — a batch wider than the candidate's
+established subtree dives past the refutation into passive opponent replies under virtual
+loss, inflating bad candidates' Q (measured: 0.009-prior move, raw −1.09 → Q +0.02 in 12
+wide-batch visits). Fix: cap forced width by established visits (1,1,2,4,8…); plus a
+policy-greedy candidate anchor. Q-equivalence test pins backup correctness bit-for-bit.
+
+**Post-fix verdict: Gumbel still loses ~20-40 sL to PUCT at 32 visits on the champion net**
+(m4 −41 ± 14; leaf-batch-1 probe −19 ± 18; prior-dominant σ scale −149 = raw-policy-level).
+Interpretation: **distillation makes the policy prior unusually strong relative to the value
+head, and Gumbel's value-trusting argmax is exactly wrong for that profile** — published
+low-visit Gumbel gains assume RL-loop nets with value/policy quality in balance. PUCT+LCB
+(KataGo-tuned) stays the engine default; gumbel stays available behind flags.
+
 ## Replay relabeling closes the searched-target question (r1, task 12)
 
 `replay_relabel.py`: walk game records (g170 .sgfs / match JSONL), query the teacher with the
