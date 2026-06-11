@@ -21,6 +21,8 @@ import sys
 import threading
 import time
 
+import numpy as np
+
 from ..go.board import BLACK, WHITE, Board, PASS, gtp_to_xy, opp, xy_to_gtp
 from .search import MCTS, NNEvaluator, adaptive_batch, rank_children
 
@@ -76,7 +78,8 @@ class AnalysisEngine:
         return b
 
     # ---- result building from a (partially) searched root ----
-    def _build_result(self, q: dict, turn: int, root, during_search: bool) -> dict:
+    def _build_result(self, q: dict, turn: int, root, during_search: bool,
+                      ranking=None) -> dict:
         ys = int(q.get("boardYSize", 19))
         xs = int(q.get("boardXSize", 19))
         report_as = q.get("overrideSettings", {}).get("reportAnalysisWinratesAs", "SIDETOMOVE")
@@ -99,7 +102,8 @@ class AnalysisEngine:
         }
 
         # Order by LCB (robust value), not raw visit count — what gets played is moveInfos[0].
-        visited = rank_children(root.children, self.lcb_stdevs)
+        # A Gumbel-root search supplies its own ranking (argmax of g + log pi + sigma(Q)).
+        visited = ranking if ranking is not None else rank_children(root.children, self.lcb_stdevs)
         move_infos = []
         for order, ch in enumerate(visited):
             mv_wl = -ch.winloss()      # child stats are in the opponent's perspective
@@ -173,6 +177,20 @@ class AnalysisEngine:
         mcts = MCTS(self.ev, komi, self.pos_len, **self.mcts_kwargs)
         root = mcts.prepare(board)
         last_report = time.monotonic()
+        if mcts.gumbel_root:
+            # Deterministic but per-move-varying noise: derive the rng from the configured
+            # seed and the turn number, so replays are reproducible move for move.
+            rng = np.random.default_rng((mcts.gumbel_seed, turn))
+            for _done in mcts.gumbel_search(root, visits, self.leaf_batch, rng):
+                if self._is_terminated(qid, start_epoch):
+                    return
+                if report_every and (time.monotonic() - last_report) >= float(report_every):
+                    self._emit(self._build_result(q, turn, root, during_search=True))
+                    last_report = time.monotonic()
+            if not self._is_terminated(qid, start_epoch):
+                self._emit(self._build_result(q, turn, root, during_search=False,
+                                              ranking=mcts.gumbel_ranking))
+            return
         done = 0
         while done < visits:
             if self._is_terminated(qid, start_epoch):

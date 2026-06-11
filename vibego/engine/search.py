@@ -180,7 +180,10 @@ class MCTS:
                  dynamic_score_scale: float = 0.75, cpuct_stdev_scale: float = 0.0,
                  cpuct_stdev_prior: float = 0.40, cpuct_stdev_prior_weight: float = 2.0,
                  fpu_parent_pow: float = 2.0,
-                 early_stop: bool = False, early_stop_min_frac: float = 0.5):
+                 early_stop: bool = False, early_stop_min_frac: float = 0.5,
+                 gumbel_root: bool = False, gumbel_m: int = 16,
+                 gumbel_c_visit: float = 50.0, gumbel_c_scale: float = 1.0,
+                 gumbel_seed: int = 0):
         self.ev = evaluator
         self.komi = komi
         self.pos_len = pos_len
@@ -209,6 +212,18 @@ class MCTS:
         # visit can change the visit-winner. Parameter-free and provably safe for visit selection.
         self.early_stop = early_stop
         self.early_stop_min_frac = early_stop_min_frac
+        # Gumbel-AlphaZero root search (Danihelka et al. 2022, "Policy improvement by planning
+        # with Gumbel"): at the root, sample the top-m moves WITHOUT replacement by
+        # log(prior) + Gumbel noise, then spend the visit budget on them with sequential
+        # halving; below the root, selection stays plain PUCT. The final move is the argmax of
+        # g(a) + log pi(a) + sigma(completedQ(a)) over the surviving candidates. Designed for
+        # low visit budgets; ignores early_stop (the halving schedule owns the budget).
+        self.gumbel_root = gumbel_root
+        self.gumbel_m = gumbel_m
+        self.gumbel_c_visit = gumbel_c_visit   # paper's c_visit
+        self.gumbel_c_scale = gumbel_c_scale   # paper's c_scale
+        self.gumbel_seed = gumbel_seed         # deterministic noise; callers may vary per move
+        self.gumbel_ranking: list[Node] | None = None  # set by gumbel_search: best move first
 
     def _cpuct_stdev_factor(self, node) -> float:
         n = node.N
@@ -299,7 +314,11 @@ class MCTS:
             for n in path:
                 n.vloss += 1
             paths.append(path)
+        return self._finish_paths(paths)
 
+    def _finish_paths(self, paths) -> int:
+        """Evaluate the collected leaves as one batch, expand them, and back up every path
+        (undoing virtual loss). Returns the number of paths (= visits added at the root)."""
         # Build boards for leaves that still need evaluation.
         to_eval, eval_boards = [], []
         for path in paths:
@@ -337,14 +356,93 @@ class MCTS:
                 n.Wsc += sign * sc
         return len(paths)
 
+    # ---- Gumbel-AlphaZero root search ----
+    def _step_forced(self, root: Node, child: Node, batch_size: int) -> int:
+        """Like step(), but the move at the root is forced to `child` (sequential halving owns
+        the root); below the root, normal PUCT selection with virtual loss."""
+        paths = []
+        for _ in range(batch_size):
+            path = [root, child]
+            node = child
+            while node.expanded and node.children:
+                node = self._select(node)
+                path.append(node)
+                if not node.expanded:
+                    break
+            for n in path:
+                n.vloss += 1
+            paths.append(path)
+        return self._finish_paths(paths)
+
+    def _sigma(self, q: float, max_n: int) -> float:
+        """The paper's monotone Q transform: sigma(q) = (c_visit + max_b N(b)) * c_scale * q.
+        `q` must be in the ROOT mover's perspective (a root child's mean is the opponent's, so
+        callers negate child.q())."""
+        return (self.gumbel_c_visit + max_n) * self.gumbel_c_scale * q
+
+    def _gumbel_rank(self, root: Node, cands: list[tuple]):
+        """Sort candidates (node, gumbel, logp) by g + log pi + sigma(completedQ), best first.
+        completedQ = the child's mean utility in the root mover's perspective if visited, else
+        the root's own value estimate (value-completion). PASS is demoted below real moves,
+        matching rank_children (area scoring: a harmless move never loses points)."""
+        max_n = max((c.N for c in root.children), default=0)
+        v_root = root.q() if root.N > 0 else self._utility(root.eval, root.board.to_move)
+
+        def key(item):
+            ch, g, logp = item
+            q = -ch.q() if ch.N > 0 else v_root   # negate: child stats are opponent's view
+            return (ch.move is not PASS, g + logp + self._sigma(q, max_n))
+
+        return sorted(cands, key=key, reverse=True)
+
+    def gumbel_search(self, root: Node, visits: int, batch_size: int, rng):
+        """Generator running Gumbel root search on a prepared root: yields cumulative visits
+        after every evaluated batch (so callers can stream reports / terminate). On completion
+        sets self.gumbel_ranking (visited candidates, best move first — play ranking[0])."""
+        self.gumbel_ranking = None
+        children = root.children
+        if not children or visits <= 0:
+            self.gumbel_ranking = sorted((c for c in children if c.N > 0), key=lambda c: -c.N)
+            return
+        logp = np.log(np.maximum([ch.P for ch in children], 1e-30))
+        m = min(self.gumbel_m, len(children))
+        idx, g = gumbel_top_k(logp, m, rng)
+        cands = [(children[i], float(g[i]), float(logp[i])) for i in idx]
+        eliminated: list[tuple] = []
+        done = 0
+        for alloc in sequential_halving_schedule(m, visits):
+            cands = self._gumbel_rank(root, cands)
+            eliminated = cands[len(alloc):] + eliminated   # halved-away, best first
+            cands = cands[:len(alloc)]
+            for (ch, _g, _lp), n in zip(cands, alloc):
+                given = 0
+                while given < n:
+                    # First visit to an unexpanded candidate goes alone: a forced batch > 1
+                    # would just re-select the same unexpanded leaf (wasted duplicate visits).
+                    b = 1 if not ch.expanded else min(batch_size, n - given)
+                    added = self._step_forced(root, ch, b)
+                    given += added
+                    done += added
+                    yield done
+        # Final selection is the argmax over the SURVIVING candidates; eliminated ones follow
+        # (in their own score order) purely for reporting.
+        ranked = self._gumbel_rank(root, cands) + self._gumbel_rank(root, eliminated)
+        self.gumbel_ranking = [ch for ch, _g, _lp in ranked if ch.N > 0]
+
     def _winner_locked(self, root: Node, remaining: int) -> bool:
         """True once the top-visited root child's visit lead can't be overtaken by the remaining
         visits (so the visit-winner is decided) — the cheap, safe early-stop signal."""
         ns = sorted((c.N for c in root.children), reverse=True)
         return len(ns) >= 2 and (ns[0] - ns[1]) > remaining
 
-    def run(self, root_board: Board, visits: int, batch_size: int = 16) -> Node:
+    def run(self, root_board: Board, visits: int, batch_size: int = 16,
+            seed: int | None = None) -> Node:
         root = self.prepare(root_board)
+        if self.gumbel_root:
+            rng = np.random.default_rng(self.gumbel_seed if seed is None else seed)
+            for _ in self.gumbel_search(root, visits, batch_size, rng):
+                pass
+            return root
         done = 0
         min_done = max(2, int(self.early_stop_min_frac * visits))
         while done < visits:
@@ -365,6 +463,45 @@ def adaptive_batch(batch_size: int, done: int, visits: int) -> int:
     so the opening of the search is effectively sequential."""
     cap = min(batch_size, max(1, visits // 8))
     return max(1, min(cap, visits - done, max(1, done)))
+
+
+def gumbel_top_k(log_probs, k: int, rng):
+    """Gumbel-top-k trick: argtop-k of log_probs + Gumbel(0,1) noise is an exact sample of k
+    items WITHOUT replacement from softmax(log_probs). Returns (indices best-first, the noise
+    vector g) — g is kept because the final Gumbel move selection reuses the same g(a)."""
+    g = rng.gumbel(size=len(log_probs))
+    order = np.argsort(-(np.asarray(log_probs, dtype=np.float64) + g))
+    return order[:k], g
+
+
+def sequential_halving_schedule(m: int, budget: int) -> list[list[int]]:
+    """Visit allocation for sequential halving over m candidates: phase k keeps the top
+    m // 2**k candidates, and each phase splits its share of the budget evenly (the last phase
+    absorbs the remainder, so the total over all phases is EXACTLY `budget`). Returns one list
+    per phase with the extra visits for each surviving candidate, best-ranked first."""
+    sizes = []
+    mc = max(1, m)
+    while mc > 1:
+        sizes.append(mc)
+        mc //= 2
+    if not sizes:
+        sizes = [1]
+    schedule = []
+    remaining = max(0, budget)
+    for i, mc in enumerate(sizes):
+        if i == len(sizes) - 1:
+            per, extra = divmod(remaining, mc)
+            alloc = [per + (1 if j < extra else 0) for j in range(mc)]
+        else:
+            per = max(1, remaining // ((len(sizes) - i) * mc))
+            alloc, left = [], remaining
+            for _ in range(mc):
+                take = min(per, left)
+                alloc.append(take)
+                left -= take
+        remaining -= sum(alloc)
+        schedule.append(alloc)
+    return schedule
 
 
 def lcb(child: "Node", lcb_stdevs: float = 5.0) -> float:

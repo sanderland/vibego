@@ -46,6 +46,14 @@ def parse_args():
                    help="stop search once the leading move's visit lead is unbeatable (low-visit latency lever)")
     p.add_argument("-early-stop-min-frac", type=float, default=0.5,
                    help="don't early-stop before this fraction of the visit budget is spent")
+    p.add_argument("-gumbel", action="store_true",
+                   help="Gumbel-AlphaZero root search (Danihelka et al. 2022): sample top-m root "
+                        "moves by log-prior + Gumbel noise, sequential halving over the visit "
+                        "budget; built for low visits. Deterministic per move (seed, turn).")
+    p.add_argument("-gumbel-m", type=int, default=16,
+                   help="number of root candidates sampled without replacement (gumbel mode)")
+    p.add_argument("-gumbel-seed", type=int, default=0,
+                   help="base seed for the per-move Gumbel noise (mixed with the turn number)")
     args, _ignored = p.parse_known_args()
     return args
 
@@ -77,7 +85,9 @@ def main():
         sys.stderr.write(f"vibego: loaded {args.model} ({config}) on {device}\n")
     sys.stderr.flush()
     mcts_kwargs = {"c_puct": args.cpuct, "c_puct_log": args.cpuct_log,
-                   "early_stop": args.early_stop, "early_stop_min_frac": args.early_stop_min_frac}
+                   "early_stop": args.early_stop, "early_stop_min_frac": args.early_stop_min_frac,
+                   "gumbel_root": args.gumbel, "gumbel_m": args.gumbel_m,
+                   "gumbel_seed": args.gumbel_seed}
     engine = AnalysisEngine(evaluator, pos_len, default_visits=args.default_visits,
                             leaf_batch=args.leaf_batch, lcb_stdevs=args.lcb_stdevs,
                             mcts_kwargs=mcts_kwargs)
