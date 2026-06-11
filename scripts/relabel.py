@@ -30,7 +30,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from vibego.go.board import xy_to_gtp
+from vibego.go.board import gtp_to_xy, xy_to_gtp
 from vibego.net import data as ndata
 
 
@@ -133,14 +133,33 @@ def _row_query(bin_full, glob_full, pos_len, komi_idx, qid, visits):
     }, xs, ys
 
 
-def _targets_from_response(r, xs, ys, pos_len):
+def _targets_from_response(r, xs, ys, pos_len, policy_temp=0.0):
+    """policy_temp=0: policy target = the net's raw prior (analysis "policy" field — NOTE this
+    is the prior regardless of maxVisits; the SEARCH distribution is in moveInfos[].visits).
+    policy_temp=T>0: target ∝ visits^(1/T) over searched moves (T=1 raw visit counts, larger T
+    softer) — the true searched-policy distillation target."""
     policy = np.zeros(pos_len * pos_len + 1, dtype=np.float32)
-    tp = r["policy"]
-    for i, p in enumerate(tp[:-1]):
-        if p >= 0:
-            x, y = i % xs, i // xs
-            policy[y * pos_len + x] = p
-    policy[pos_len * pos_len] = max(0.0, tp[-1])
+    if policy_temp > 0.0 and r.get("moveInfos"):
+        for mi in r["moveInfos"]:
+            v = float(mi.get("visits", 0))
+            if v <= 0:
+                continue
+            w = v ** (1.0 / policy_temp)
+            xy = gtp_to_xy(mi["move"], ys)
+            if xy is None:
+                policy[pos_len * pos_len] += w
+            else:
+                policy[xy[1] * pos_len + xy[0]] += w
+        tot = policy.sum()
+        if tot > 0:
+            policy /= tot
+    else:
+        tp = r["policy"]
+        for i, p in enumerate(tp[:-1]):
+            if p >= 0:
+                x, y = i % xs, i // xs
+                policy[y * pos_len + x] = p
+        policy[pos_len * pos_len] = max(0.0, tp[-1])
     own = np.zeros((pos_len, pos_len), dtype=np.float32)
     for i, o in enumerate(r["ownership"]):
         own[i // xs, i % xs] = o
@@ -150,7 +169,7 @@ def _targets_from_response(r, xs, ys, pos_len):
     return policy, value, score, own
 
 
-def relabel_file(path, out_path, teacher, pos_len, visits):
+def relabel_file(path, out_path, teacher, pos_len, visits, policy_temp=0.0):
     with np.load(path) as npz:
         packed = npz["binaryInputNCHWPacked"]
         global_nc = npz["globalInputNC"]
@@ -172,7 +191,7 @@ def relabel_file(path, out_path, teacher, pos_len, visits):
         if "policy" not in r or "rootInfo" not in r:
             continue
         xs, ys = sizes[f"r{i}"]
-        p, v, s, o = _targets_from_response(r, xs, ys, pos_len)
+        p, v, s, o = _targets_from_response(r, xs, ys, pos_len, policy_temp)
         pol[i, 0] = p
         gt[i, 0:3] = v
         gt[i, 3] = s
@@ -198,7 +217,7 @@ def _write_npz(out_path, packed, global_nc, pol, gt, own):
     return packed.shape[0]
 
 
-def relabel_stream(items, teacher, pos_len, visits, max_inflight=2048):
+def relabel_stream(items, teacher, pos_len, visits, max_inflight=2048, policy_temp=0.0):
     """Relabel many files with a large query window kept in flight, so the teacher's NN batch
     stays full — relabeling one file at a time leaves the GPU ~idle between files (the dominant
     cost at visits=1). Yields (src_path, out_path, packed, global_nc, pol, gt, own) — the kept
@@ -260,7 +279,7 @@ def relabel_stream(items, teacher, pos_len, visits, max_inflight=2048):
         idx, i, xs, ys = qmap.pop(key)
         st = loaded[idx]
         if "policy" in r and "rootInfo" in r:  # else KataGo errored on this position -> drop it
-            p, v, s, o = _targets_from_response(r, xs, ys, pos_len)
+            p, v, s, o = _targets_from_response(r, xs, ys, pos_len, policy_temp)
             st["pol"][i, 0] = p
             st["gt"][i, 0:3] = v
             st["gt"][i, 3] = s
@@ -353,6 +372,9 @@ def main():
                    help="stop when the output dir reaches ~this many GB")
     p.add_argument("--pos-len", type=int, default=19)
     p.add_argument("--visits", type=int, default=1, help="teacher visits (1 = raw policy)")
+    p.add_argument("--policy-temp", type=float, default=0.0,
+                   help="0 = policy target is the raw prior (default; NOTE: regardless of "
+                        "--visits). >0 = build policy from search visit counts ∝ v^(1/T)")
     p.add_argument("--inflight", type=int, default=2048,
                    help="teacher queries kept in flight; fills the NN batch (throughput knob)")
     p.add_argument("--shard-size", type=int, default=None,
@@ -429,7 +451,8 @@ def _run_sharded(args, files, max_bytes):
     try:
         if not reached():
             for src, _o, packed, gnc, pol, gt, own in relabel_stream(
-                    todo, teacher, args.pos_len, args.visits, args.inflight):
+                    todo, teacher, args.pos_len, args.visits, args.inflight,
+                    policy_temp=args.policy_temp):
                 dels = [src] if args.delete_src else []
                 sw.add(packed, gnc, pol, gt, own, os.path.basename(src), dels)
                 sw.pos_seen += packed.shape[0]
@@ -460,7 +483,8 @@ def _run_per_file(args, files, max_bytes):
             print(f"already at {cached_bytes/1e9:.2f} GB >= target; nothing to do")
         else:
             for src, out_path, packed, gnc, pol, gt, own in relabel_stream(
-                    items, teacher, args.pos_len, args.visits, args.inflight):
+                    items, teacher, args.pos_len, args.visits, args.inflight,
+                    policy_temp=args.policy_temp):
                 _write_npz(out_path, packed, gnc, pol, gt, own)
                 done += 1; pos += packed.shape[0]; new_bytes += os.path.getsize(out_path)
                 if done % 50 == 0:
