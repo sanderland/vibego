@@ -239,12 +239,25 @@ def _explore_searched():
     ]
 
 
+def _explore_erasource():
+    # e8: which era drives the mix30 gain? kata1-300sh + era-PURE g170 blocks (shard ranges
+    # from the relabel manifest: b10-era 0-89, b15-era 100-189, b6-era 290-351 — b6 arm is
+    # ~17% dose vs ~23% for the others; note in writeup). Controls: mix30 pooled −7.7, plain
+    # dw7 −21.
+    m = ["--optimizer", "muon", "--lr", "0.04"]
+    return [
+        ("e8_b10era", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix_b10era"]),
+        ("e8_b15era", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix_b15era"]),
+        ("e8_b6era", "b7c106nbt", "data", m + ["--data", "/workspace/distill/mix_b6era"]),
+    ]
+
+
 BATCHES = {"a0": _train_axis() + _arch_axis(), "a1": _arch_muon(), "r0": _recipe(),
            "a2": _arch_broad(), "s0": _scale(), "s1": _scale2(), "s2": _scale3(),
            "s3": _seed_var(), "s4": _scale4(), "s5": _scale5(), "e0": _explore_depth(),
            "e1": _explore_pattern_loss(), "e2": _explore_eramix(), "e3": _explore_eramix2(),
            "e4": _explore_eramix3(), "e5a": _explore_attn_lr(), "e5b": _explore_attn_scale(),
-           "e6": _explore_searched()}
+           "e6": _explore_searched(), "e8": _explore_erasource()}
 
 EVAL_RE = re.compile(r"\[eval final\]\s+(.*)")
 KV_RE = re.compile(r"(\w+)=([\d.eE+-]+)")
