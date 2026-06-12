@@ -28,6 +28,14 @@ That part is unsurprising — distillation is known to work. The interesting fin
 below: **what we expected to help and didn't, what helped and shouldn't have, and how often a
 verdict flipped with scale.**
 
+**Saturation coda (s10):** doubling the data again (the full 44M kata1 pool + weak-era ×3,
+320k steps) produced the study's best val (2.666) but **zero Elo gain**: pooled 192-game anchor
+measurement −9.5 ± 2.7 sL vs s9's −8.6 ± 2.4, h2h +2.3 ± 5.4 (flat). **The 2.6M-param
+b10c128nbt-pat architecture saturates ~9 sL short of `g170e-b10c128` regardless of data** —
+one more val≠Elo instance, and the cleanest capacity-bound demonstration in the study. A
+capacity-step run (4.2M params, 2686 MF) was the final experiment; its numbers below if it
+landed before the pod died.
+
 The parity-attempt run (`s9_b10pat_parity`: 23.5M positions = kata1-2400sh + the full 471-shard
 weak-era pool at 16% mix, 240k steps) finished the study as champion: **−8.6 ± 2.4 sL [−13.3, −4.0] vs `g170e-b10c128`** (pooled over 192 games; the extra 128
 fresh-opening games alone measured −7.0 ± 2.8, Elo −112 [−180, −52]) — the best anchor result — while

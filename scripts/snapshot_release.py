@@ -24,6 +24,7 @@ OUT = os.path.join(REPO, "released")
 
 # (run id, mode) — mode "full" keeps optimizer (resume-capable), "model" strips to weights+meta
 SELECTION = [
+    ("s11_b12c152_cap", "full"),      # capacity step (4.2M params, 2686 MF) — partials count
     ("s10_b10pat_max", "full"),       # maximal candidate (full 44M pool + era x3, 320k) — partial ckpts count
     ("s9_b10pat_parity", "full"),     # overall champion (23.5M pos, best vs b10c128: -12.8 sL)
     ("s8_b10pat_final", "full"),      # runner-up (h2h indistinguishable)
