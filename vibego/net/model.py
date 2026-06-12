@@ -520,6 +520,9 @@ ARCHS: dict[str, ModelConfig] = {
     # pattern dig: 5×5 hashed table (65k buckets × d32 ≈ 2.1M table params — memory, not FLOPs)
     # at 6b, the tier where pattern memory decisively pays; A/B against b6c96nbt-pat (3×3).
     "b6c96nbt-pat5":  ModelConfig(channels=96, block_kinds=_kinds(6, gpool=True, base="nbt"), pattern_embed5=True),
+    # capacity step toward the b15-tier goal (2686 MF, 4.2M params — ~45% under b15c192-gpool's
+    # shape): wider-not-deeper per the depth-costs-CPU finding; pattern on (never hurts, ~free).
+    "b12c152nbt-pat": ModelConfig(channels=152, block_kinds=_kinds(12, gpool=True, base="nbt"), pattern_embed=True),
 }
 
 
