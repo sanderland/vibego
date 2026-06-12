@@ -149,10 +149,8 @@ def make_collection(api: HfApi):
     from huggingface_hub import get_collection
     col = api.create_collection(
         title="vibego", namespace=USER, exists_ok=True,
-        description="Tiny distilled KataGo-style Go nets trained on one GPU from public data, "
-                    "plus the distillation datasets. A b10-class net reaches single-digit "
-                    "scoreLead from g170e-b10c128 at ~1/3 the inference cost. Study writeup: "
-                    f"{REPO_URL} (experiments/WRITEUP.md).")
+        description="Tiny distilled KataGo-style Go nets (one GPU, public data) "
+                    "+ the distillation datasets. Writeup in the repo.")
     items = [(f"{USER}/{n}", "model") for n, f, _ in MODELS
              if os.path.exists(os.path.join("released", f))]
     items += [(f"{USER}/{n}", "dataset") for n, _, _ in DATASETS]
