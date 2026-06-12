@@ -218,6 +218,24 @@ To reproduce the current champion (s8-class, ~2.6M params, decisively above `g17
 (The final champion `s9_b10pat_parity` used kata1-2400sh + all 471 weak-era shards (16% mix)
 for 240k steps — same recipe otherwise.)
 
+## What this is NOT: a fair fight with the RL run
+
+Comparing our nets to the g170 anchors on "training rows" or "samples" flatters distillation
+on three axes that deserve to be stated plainly:
+- **Per-row supervision richness.** We regress b18's full soft policy distribution plus its
+  calibrated value/score/ownership estimates — near-zero-variance targets. g170's nets trained
+  on their own ~600-visit search visit-counts and **game outcomes** (binary value) — far
+  noisier per row. Much of distillation's apparent sample efficiency is just this.
+- **The teacher already paid for the knowledge.** b18's strength is the product of years of
+  distributed RL; our training compresses it, it doesn't rediscover it. Every claim here is
+  conditional on a strong public teacher existing.
+- **Era advantage.** Nested-bottleneck blocks, the pattern table, and Muon are all post-g170
+  advances; part of our FLOPs edge over the 2020-era anchor shapes is simply that.
+
+The transferable contributions are the recipe findings (diversity > recency, raw soft prior >
+searched labels, where capacity binds, the measurement methodology) — not an efficiency
+victory over self-play RL.
+
 ## Caveats
 
 - **One search implementation, one visit budget.** All strength numbers are our PUCT+LCB search
