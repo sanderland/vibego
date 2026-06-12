@@ -1,5 +1,5 @@
 """Publish the study's artifacts to Hugging Face (user request 2026-06-12): collection
-'nanogo' under user sanderland — one DATASET repo per data subset, one MODEL repo per net,
+'vibego' under user sanderland — one DATASET repo per data subset, one MODEL repo per net,
 data CC-BY-4.0, no code (that's a later GitHub release). Token via HF_TOKEN env only.
 
     uv run python scripts/hf_publish.py --datasets    # create+upload dataset repos (resumable)
@@ -40,18 +40,18 @@ the KataGo distributed-training contributors. License: CC-BY-4.0.
 """
 
 DATASETS = [
-    ("nanogo-distilled-g170mix", "/workspace/distill/distilled-g170mix",
+    ("vibego-distilled-g170mix", "/workspace/distill/distilled-g170mix",
      "Era-stratified g170 self-play positions (b6c96/b10c128/b15c192-era heavy, thin b20 tail), "
      "relabeled by b18 at visits 1. The data behind the study's era-diversity result: mixing "
      "~20-30% of this into recent kata1 data beat recent-only at fixed compute (+13 scoreLead, "
      "2 seeds), with the weak eras carrying the entire effect. ~3.8M positions, 471 shards."),
-    ("nanogo-replay-relabel-ab", None,  # two source dirs, special-cased below
+    ("vibego-replay-relabel-ab", None,  # two source dirs, special-cased below
      "Paired label-quality A/B sets: the SAME 450k replayed g170 positions (full move-history "
      "context, real history input planes) labeled two ways — `v1/` b18 raw prior at 1 visit, "
      "`v32p/` b18 32-visit searched policy (visit-count distribution) + searched value. "
      "Study result: searched labels only reach parity with the raw prior at 32x label cost "
      "(and are decisively harmful if relabeling lacks history context)."),
-    ("nanogo-distilled-b18-kata1", "/workspace/distill/distilled-b18",
+    ("vibego-distilled-b18-kata1", "/workspace/distill/distilled-b18",
      "Recent kata1 training positions (daily archives 2026-05-04..06, multi-board-size, "
      "randomized komi) relabeled by b18 at visits 1 — the study's base distillation set. "
      "~44M positions, 5379 shards, ~75GB. Champion nets trained on this + the g170mix set."),
@@ -59,33 +59,33 @@ DATASETS = [
 
 # (repo_suffix, released file, blurb) — model repos, one per net
 MODELS = [
-    ("nanogo-s9-b10c128nbt-pat", "s9_b10pat_parity.pt",
+    ("vibego-s9-b10c128nbt-pat", "s9_b10pat_parity.pt",
      "Final study champion. b10c128nbt-pat (2.57M params, 1567 MFLOP/eval, ~17.8 single-thread "
      "CPU-ms). Trained 240k steps on 23.5M positions (kata1-2400sh + full weak-era pool). "
      "Strength: −8.6 ± 2.4 judge scoreLead vs g170e-b10c128 over 192 paired games at 48 visits "
      "(b18 judge, 256v); decisively above g170-b6c96 (+200-class Elo). Full checkpoint "
      "(optimizer state included — resume-capable)."),
-    ("nanogo-s10-b10c128nbt-pat-max", "s10_b10pat_max.pt",
+    ("vibego-s10-b10c128nbt-pat-max", "s10_b10pat_max.pt",
      "Maximal-data candidate: b10c128nbt-pat on the FULL pool (44M kata1 positions + weak-era "
      "x3 oversample, ~20% mix), 320k steps. See collection notes for final Stage-B numbers."),
-    ("nanogo-s8-b10c128nbt-pat", "s8_b10pat_final.pt",
+    ("vibego-s8-b10c128nbt-pat", "s8_b10pat_final.pt",
      "b10c128nbt-pat, 14.8M positions (kata1-1400sh + 23% era mix), 180k steps. −20.4 ± 3.7 sL "
      "vs g170e-b10c128. Full checkpoint."),
-    ("nanogo-s6-b10c128nbt-pat-polish", "s6_b10pat_mixcont_model.pt",
+    ("vibego-s6-b10c128nbt-pat-polish", "s6_b10pat_mixcont_model.pt",
      "The cheap-polish exemplar: s5 resumed +60k steps on era-mixed data → +18.6 sL / +120 Elo "
      "over its base (h2h, decisive). Weights-only."),
-    ("nanogo-s5-b10c128nbt-pat", "s5_b10pat1200_model.pt",
+    ("vibego-s5-b10c128nbt-pat", "s5_b10pat1200_model.pt",
      "b10c128nbt-pat, kata1-1200sh/120k (pre-polish baseline). Weights-only."),
-    ("nanogo-s4-b7c106nbt-pat", "s4_dw7pat1200.pt",
+    ("vibego-s4-b7c106nbt-pat", "s4_dw7pat1200.pt",
      "759-MFLOP tier champion (1.38M params, ~11.2 single-thread CPU-ms): first net of the study "
      "to decisively beat g170-b6c96 (+14.4 sL [2.5,26.3] / Elo +124 [40,227], 64 games, 48v). "
      "Full checkpoint."),
-    ("nanogo-s2-b7c106nbt-pat-600", "s2_dw7pat600_model.pt",
+    ("vibego-s2-b7c106nbt-pat-600", "s2_dw7pat600_model.pt",
      "dw7pat scaling-curve point (600sh/60k): Elo −22 vs g170-b6c96. Weights-only."),
-    ("nanogo-b6c96nbt-pat", "s_nbtpat_model.pt",
+    ("vibego-b6c96nbt-pat", "s_nbtpat_model.pt",
      "561-MFLOP frontier point (0.9M params, ~8.2 CPU-ms) with the 3x3 dihedral pattern table "
      "(~+200 Elo at this size, ~0 FLOPs). Weights-only."),
-    ("nanogo-b7c106nbt", "s_dw7_model.pt",
+    ("vibego-b7c106nbt", "s_dw7_model.pt",
      "The study's universal dw7 control net (b7c106nbt, 300sh/30k). Weights-only."),
 ]
 
@@ -118,7 +118,7 @@ def publish_datasets(api: HfApi, only=None):
         api.create_repo(repo, repo_type="dataset", exist_ok=True)
         api.upload_file(path_or_fileobj=(DATA_HEADER + f"# {name}\n\n{blurb}\n" + DATA_FORMAT).encode(),
                         path_in_repo="README.md", repo_id=repo, repo_type="dataset")
-        if name == "nanogo-replay-relabel-ab":
+        if name == "vibego-replay-relabel-ab":
             # upload_large_folder doesn't take path_in_repo; these subdirs are small enough
             # (~600MB each) for plain upload_folder
             for sub, p in [("v1", "/workspace/distill/replay_v1"), ("v32p", "/workspace/distill/replay_v32p")]:
@@ -148,7 +148,7 @@ def publish_models(api: HfApi):
 def make_collection(api: HfApi):
     from huggingface_hub import get_collection
     col = api.create_collection(
-        title="nanogo", namespace=USER, exists_ok=True,
+        title="vibego", namespace=USER, exists_ok=True,
         description="Tiny distilled KataGo-style Go nets trained on one GPU from public data, "
                     "plus the distillation datasets. A b10-class net reaches single-digit "
                     "scoreLead from g170e-b10c128 at ~1/3 the inference cost. Study writeup: "
