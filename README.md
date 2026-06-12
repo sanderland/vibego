@@ -17,6 +17,50 @@ It trains on real [katagoarchive.org](https://katagoarchive.org/) self-play data
 generation of its own) and serves a JSON analysis engine that
 [KaTrain](https://github.com/sanderland/katrain) can drive.
 
+## Results: the June 2026 distillation study
+
+A multi-day agent-driven study using this platform trained 0.8–2.6M-param nets purely by
+distilling the public `kata1-b18c384nbt` net over public positions — **no self-play RL loop** —
+on a single GPU:
+
+- a **1.38M-param / 759 MFLOP net decisively beats `g170-b6c96`** (+14.4 judge scoreLead
+  [2.5, 26.3], Elo +124 [40, 227]) at ~⅓ the anchor's inference cost;
+- the champion **b10c128nbt-pat (2.57M params) reaches −8.6 ± 2.4 scoreLead from
+  `g170e-b10c128`** over 192 paired games;
+- along the way: data **diversity beats data strength** at fixed compute (and in-domain val
+  loss anti-correlates), searched/amplified distillation targets are a trap unless relabeling
+  has full history context (and break even at best), Gumbel root search loses to PUCT for
+  distilled nets at low visits, and screening verdicts routinely **flip sign with scale**.
+
+**Read the full writeup: [`experiments/WRITEUP.md`](experiments/WRITEUP.md)** — methods,
+mechanisms, and every number with CIs. The dated lab notebook is in
+[`experiments/`](experiments/INDEX.md).
+
+### Artifacts on Hugging Face
+
+Everything is published in the
+**[vibego collection](https://huggingface.co/collections/sanderland/vibego-6a2bd05f6853451f0d0fabf8)**:
+
+- **Models** (one repo per net, full checkpoints resume-capable): champion lineage
+  [s9](https://huggingface.co/sanderland/vibego-s9-b10c128nbt-pat) ·
+  [s10](https://huggingface.co/sanderland/vibego-s10-b10c128nbt-pat-max) ·
+  [s8](https://huggingface.co/sanderland/vibego-s8-b10c128nbt-pat) ·
+  [s6-polish](https://huggingface.co/sanderland/vibego-s6-b10c128nbt-pat-polish) ·
+  [s5](https://huggingface.co/sanderland/vibego-s5-b10c128nbt-pat), the 759-MFLOP tier
+  [s4](https://huggingface.co/sanderland/vibego-s4-b7c106nbt-pat) ·
+  [s2](https://huggingface.co/sanderland/vibego-s2-b7c106nbt-pat-600), and baselines
+  [b6c96nbt-pat](https://huggingface.co/sanderland/vibego-b6c96nbt-pat) ·
+  [b7c106nbt](https://huggingface.co/sanderland/vibego-b7c106nbt).
+- **Datasets** (CC-BY-4.0, ~92GB):
+  [vibego-distilled-b18-kata1](https://huggingface.co/datasets/sanderland/vibego-distilled-b18-kata1)
+  (44M b18-relabeled kata1 positions),
+  [vibego-distilled-g170mix](https://huggingface.co/datasets/sanderland/vibego-distilled-g170mix)
+  (the era-diversity set),
+  [vibego-replay-relabel-ab](https://huggingface.co/datasets/sanderland/vibego-replay-relabel-ab)
+  (paired label-quality A/B sets).
+
+A small selection also lives in [`released/`](released/) in this repo.
+
 ## What's here
 
 | Module | Role |
