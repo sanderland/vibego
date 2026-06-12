@@ -1,7 +1,6 @@
 # Distilling tiny KataGo-style nets on one GPU: what actually moved Elo, and what didn't
 
-A community writeup of the **vibego** study (repo: [sanderland/nanogo](https://github.com/sanderland/nanogo),
-`dev` branch — the project is named vibego, the repo isn't renamed yet). Everything below comes
+A community writeup of the **vibego** study (repo: [sanderland/vibego](https://github.com/sanderland/vibego), `dev` branch). Everything below comes
 from the dated lab notes in `experiments/`; exact numbers, commands, and per-run registry rows
 (`experiments/registry.jsonl`) are in the repo.
 
@@ -238,7 +237,7 @@ for 240k steps — same recipe otherwise.)
 
 ## Released artifacts
 
-`released/` in the repo ([sanderland/nanogo](https://github.com/sanderland/nanogo), `dev` branch):
+`released/` in the repo ([sanderland/nanogo](https://github.com/sanderland/vibego), `dev` branch):
 
 - `s8_b10pat_final.pt` — current champion (b10c128nbt-pat, 2.57M params; kata1+era-mix from
   scratch, 180k steps).

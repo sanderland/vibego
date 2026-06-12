@@ -15,7 +15,7 @@ import sys
 from huggingface_hub import HfApi
 
 USER = "sanderland"
-REPO_URL = "https://github.com/sanderland/nanogo"
+REPO_URL = "https://github.com/sanderland/vibego"
 
 DATA_HEADER = """---
 license: cc-by-4.0
