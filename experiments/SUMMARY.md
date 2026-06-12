@@ -86,9 +86,11 @@ dated files for full detail.
    curve still not bent; next: 2400sh, then the full set needs user OK).
    **CHAMPION UPDATE (06-10 evening): s5_b10pat1200 (1567 MF, val 2.712) beats s4 h2h +31.4 sL
    / Elo +156** — the tier ordering FLIPS with data scale (dw7≥b10 at 300sh, b10≫dw7 at 1200sh).
-   **s6 (06-11): era-mix polish (+60k continue) beats s5 by +18.6 sL / Elo +120 (h2h, decisive)
-   and stands at −17.4 sL / Elo −70 [−193,+36] vs the g170e-b10c128 anchor** — near next-tier
-   parity. Cheap-polish recipe: resume + diversity data ≈ +120 Elo at ⅓ retrain cost.
+   **s6 (06-11): era-mix polish (+60k continue) beats s5 by +18.6 sL / Elo +120 (h2h, decisive).**
+   **FINAL (06-12): s9_b10pat_parity (23.5M pos incl. all weak-era data, 240k steps) ends the
+   study at −12.8 ± 4.5 sL [−21.6,−4.0] vs g170e-b10c128** — per-doubling gains decayed to
+   ~5-8 sL; parity needs the full 44M pool or a capacity step. Champion lineage s4→s5→s6→s8→s9
+   all in released/. Community writeup: experiments/WRITEUP.md.
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best
    run. Scale the b18-relabeled set well past 1M positions; train longer. (Open — most promising.)
 3. **Teacher ensembling** — average b18 + b28 + b40 soft policies (still 1 visit) as a

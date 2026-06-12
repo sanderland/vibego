@@ -29,11 +29,12 @@ That part is unsurprising — distillation is known to work. The interesting fin
 below: **what we expected to help and didn't, what helped and shouldn't have, and how often a
 verdict flipped with scale.**
 
-> **TODO (s9, pending):** a 240k-step parity-attempt run (more weak-era data) lands after this
-> writeup. Slot in here and in the recipe section:
-> - s9 Stage-B vs `g170e-b10c128`: ___ sL / Elo ___
-> - s9 h2h vs s8: ___ sL / Elo ___
-> Until then, s8 is the champion and "−20 sL short of b10c128" is the standing result.
+The parity-attempt run (`s9_b10pat_parity`: 23.5M positions = kata1-2400sh + the full 471-shard
+weak-era pool at 16% mix, 240k steps) finished the study as champion: **−12.8 ± 4.5 sL
+[−21.6, −4.0] vs `g170e-b10c128`** (Elo −163 [−274, −77]) — the best anchor result — while
+h2h vs s8 was +5.1 ± 6.4 (indistinguishable, full 64). The per-doubling gain has decayed to
+~5-8 sL: closing the last ~13 sL to b10c128 parity within this 2.6M-param arch looks like
+1-2 more data doublings (the full 44M-position pool) or a capacity step.
 
 ## The non-obvious findings
 
@@ -207,8 +208,8 @@ To reproduce the current champion (s8-class, ~2.6M params, decisively above `g17
    sides, b18 judge at 256 visits, paired color-reversed random openings, paired scoreLead as the
    headline statistic with early stopping. Expect ±10 sL train-seed noise at 64 games.
 
-> **TODO (s9):** if the 240k-step weak-era-heavy run changes the champion, update steps/mix here
-> and the headline numbers above.
+(The final champion `s9_b10pat_parity` used kata1-2400sh + all 471 weak-era shards (16% mix)
+for 240k steps — same recipe otherwise.)
 
 ## Caveats
 
