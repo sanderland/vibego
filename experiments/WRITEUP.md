@@ -237,7 +237,7 @@ for 240k steps — same recipe otherwise.)
 
 ## Released artifacts
 
-`released/` in the repo ([sanderland/nanogo](https://github.com/sanderland/vibego), `dev` branch):
+`released/` in the repo ([sanderland/vibego](https://github.com/sanderland/vibego), `dev` branch):
 
 - `s8_b10pat_final.pt` — current champion (b10c128nbt-pat, 2.57M params; kata1+era-mix from
   scratch, 180k steps).
