@@ -88,7 +88,7 @@ dated files for full detail.
    / Elo +156** — the tier ordering FLIPS with data scale (dw7≥b10 at 300sh, b10≫dw7 at 1200sh).
    **s6 (06-11): era-mix polish (+60k continue) beats s5 by +18.6 sL / Elo +120 (h2h, decisive).**
    **FINAL (06-12): s9_b10pat_parity (23.5M pos incl. all weak-era data, 240k steps) ends the
-   study at −12.8 ± 4.5 sL [−21.6,−4.0] vs g170e-b10c128** — per-doubling gains decayed to
+   study at **−8.6 ± 2.4 sL [−13.3,−4.0] vs g170e-b10c128 (192 games pooled)**** — per-doubling gains decayed to
    ~5-8 sL; parity needs the full 44M pool or a capacity step. Champion lineage s4→s5→s6→s8→s9
    all in released/. Community writeup: experiments/WRITEUP.md.
 2. **More distillation data + steps.** b6c96 saw ~13× more samples (~6.5 epochs) than our best

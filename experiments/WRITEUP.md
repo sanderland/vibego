@@ -30,8 +30,8 @@ below: **what we expected to help and didn't, what helped and shouldn't have, an
 verdict flipped with scale.**
 
 The parity-attempt run (`s9_b10pat_parity`: 23.5M positions = kata1-2400sh + the full 471-shard
-weak-era pool at 16% mix, 240k steps) finished the study as champion: **−12.8 ± 4.5 sL
-[−21.6, −4.0] vs `g170e-b10c128`** (Elo −163 [−274, −77]) — the best anchor result — while
+weak-era pool at 16% mix, 240k steps) finished the study as champion: **−8.6 ± 2.4 sL [−13.3, −4.0] vs `g170e-b10c128`** (pooled over 192 games; the extra 128
+fresh-opening games alone measured −7.0 ± 2.8, Elo −112 [−180, −52]) — the best anchor result — while
 h2h vs s8 was +5.1 ± 6.4 (indistinguishable, full 64). The per-doubling gain has decayed to
 ~5-8 sL: closing the last ~13 sL to b10c128 parity within this 2.6M-param arch looks like
 1-2 more data doublings (the full 44M-position pool) or a capacity step.
