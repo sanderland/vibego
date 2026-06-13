@@ -25,8 +25,9 @@ on a single GPU:
 
 - a **1.38M-param / 759 MFLOP net decisively beats `g170-b6c96`** (+14.4 judge scoreLead
   [2.5, 26.3], Elo +124 [40, 227]) at ~⅓ the anchor's inference cost;
-- the champion **b10c128nbt-pat (2.57M params) reaches −8.6 ± 2.4 scoreLead from
-  `g170e-b10c128`** over 192 paired games;
+- the champion **b12c152nbt-pat (4.2M params) beats `g170e-b10c128`** by +7.7 ± 2.4 scoreLead
+  [+3.0, +12.5] over 192 paired games — reached by a capacity step (same data as the saturated
+  2.6M net, +17 scoreLead from width alone);
 - along the way: data **diversity beats data strength** at fixed compute (and in-domain val
   loss anti-correlates), searched/amplified distillation targets are a trap unless relabeling
   has full history context (and break even at best), Gumbel root search loses to PUCT for
@@ -41,7 +42,8 @@ mechanisms, and every number with CIs. The dated lab notebook is in
 Everything is published in the
 **[vibego collection](https://huggingface.co/collections/sanderland/vibego-6a2bd05f6853451f0d0fabf8)**:
 
-- **Models** (one repo per net, full checkpoints resume-capable): champion lineage
+- **Models** (one repo per net, full checkpoints resume-capable): champion
+  [s11](https://huggingface.co/sanderland/vibego-s11-b12c152nbt-pat) ·
   [s9](https://huggingface.co/sanderland/vibego-s9-b10c128nbt-pat) ·
   [s10](https://huggingface.co/sanderland/vibego-s10-b10c128nbt-pat-max) ·
   [s8](https://huggingface.co/sanderland/vibego-s8-b10c128nbt-pat) ·

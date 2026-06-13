@@ -18,23 +18,29 @@ openings, scoreLead ("sL") = mean judge points:
 - **`s4_dw7pat1200` (1.38M params, 759 MFLOP/eval, 11.2 single-thread CPU-ms) beats `g170-b6c96`
   decisively: +14.4 sL [2.5, 26.3], Elo +124 [40, 227]** — at ~⅓ the FLOPs of the anchor's
   architecture shape. The climb was four data+steps doublings: Elo −417 → −112 → −22 → +124.
-- The current champion, **`s8_b10pat_final` (2.57M params, 1567 MFLOP), sits −20.4 ± 3.7 sL from
-  the next anchor up, `g170e-b10c128`** (Elo −255 [−398, −161] on win rate; the cheaper polish
-  variant s6 measured −17.4 ± 5.2 sL / Elo −70 [−193, +36] on the same anchor).
+- **The final champion `s11_b12c152_cap` (4.21M params, 2686 MFLOP, 30.8 CPU-ms) BEATS the next
+  anchor up, `g170e-b10c128`: +7.7 ± 2.4 sL [+3.0, +12.5]** (pooled 192 games; both blocks
+  decisive-positive). It got there by a **capacity step**: on the *same* full-pool data, the
+  2.6M-param `s10` measured −9.5 ± 2.7 sL against that anchor and the 4.2M-param `s11` measured
+  +7.7 — a **~17 sL swing from width alone** (h2h s11 vs s10: +21.0 ± 7.8, decisive). The b10
+  tier is cleared; the cost is comparable-to-higher than the anchor (2686 vs 2230 MFLOP,
+  30.8 vs 21.2 CPU-ms), so this is "stronger via capacity," not "cheaper and stronger" — the
+  cheaper-and-stronger wins are s4 (vs b6c96, ⅓ FLOPs) and the s9/s10 parity-at-0.7×-FLOPs.
 - Individual training runs are hours, not weeks: 120k steps ≈ 2.5h on one GPU at this size; the
-  whole champion path (relabeling included) is on the order of two days of single-GPU time.
+  whole champion path (relabeling included) is on the order of three days of single-GPU time.
 
 That part is unsurprising — distillation is known to work. The interesting findings are the ones
 below: **what we expected to help and didn't, what helped and shouldn't have, and how often a
 verdict flipped with scale.**
 
-**Saturation coda (s10):** doubling the data again (the full 44M kata1 pool + weak-era ×3,
-320k steps) produced the study's best val (2.666) but **zero Elo gain**: pooled 192-game anchor
-measurement −9.5 ± 2.7 sL vs s9's −8.6 ± 2.4, h2h +2.3 ± 5.4 (flat). **The 2.6M-param
-b10c128nbt-pat architecture saturates ~9 sL short of `g170e-b10c128` regardless of data** —
-one more val≠Elo instance, and the cleanest capacity-bound demonstration in the study. A
-capacity-step run (4.2M params, 2686 MF) was the final experiment; its numbers below if it
-landed before the pod died.
+**The capacity-bound finding (s10 → s11), the study's strongest single result.** Doubling data
+on the 2.6M-param arch (`s10`: full 44M kata1 pool + weak-era ×3, 320k steps) gave the best val
+of the study (2.666) but **zero Elo gain** over `s9` (−9.5 vs −8.6 sL, h2h flat) — the arch had
+saturated ~9 sL short of `g170e-b10c128` regardless of data. Holding that same data fixed and
+stepping width to 4.2M params (`s11`) jumped to **+7.7 sL — past the anchor**. So the wall was
+capacity, not data or steps, and (yet again) **val loss did not see it**: s10 and s11 have
+near-identical val (2.666 vs 2.662) but ~17 sL of Elo between them. When a small distilled net
+plateaus, add parameters, not data.
 
 The parity-attempt run (`s9_b10pat_parity`: 23.5M positions = kata1-2400sh + the full 471-shard
 weak-era pool at 16% mix, 240k steps) finished the study as champion: **−8.6 ± 2.4 sL [−13.3, −4.0] vs `g170e-b10c128`** (pooled over 192 games; the extra 128

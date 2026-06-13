@@ -59,12 +59,18 @@ DATASETS = [
 
 # (repo_suffix, released file, blurb) — model repos, one per net
 MODELS = [
+    ("vibego-s11-b12c152nbt-pat", "s11_b12c152_cap.pt",
+     "OVERALL STUDY CHAMPION. b12c152nbt-pat (4.21M params, 2686 MFLOP/eval, ~30.8 single-thread "
+     "CPU-ms). 260k steps on the full pool (44M kata1 positions + weak-era x3, ~20% mix). "
+     "Strength: BEATS g170e-b10c128 by +7.7 ± 2.4 judge scoreLead [+3.0, +12.5] over 192 paired "
+     "games at 48 visits (b18 judge, 256v); h2h vs the 2.6M s10 +21.0 ± 7.8. The b10 tier was "
+     "cleared by a capacity step — same data as s10 (which measured −9.5 sL), +17 sL from width "
+     "alone. Full checkpoint (optimizer included, resume-capable)."),
     ("vibego-s9-b10c128nbt-pat", "s9_b10pat_parity.pt",
-     "Final study champion. b10c128nbt-pat (2.57M params, 1567 MFLOP/eval, ~17.8 single-thread "
-     "CPU-ms). Trained 240k steps on 23.5M positions (kata1-2400sh + full weak-era pool). "
-     "Strength: −8.6 ± 2.4 judge scoreLead vs g170e-b10c128 over 192 paired games at 48 visits "
-     "(b18 judge, 256v); decisively above g170-b6c96 (+200-class Elo). Full checkpoint "
-     "(optimizer state included — resume-capable)."),
+     "b10c128nbt-pat (2.57M params, 1567 MFLOP/eval, ~17.8 single-thread CPU-ms). 240k steps on "
+     "23.5M positions (kata1-2400sh + full weak-era pool). −8.6 ± 2.4 judge scoreLead vs "
+     "g170e-b10c128 over 192 paired games (48 visits, b18 judge 256v) at 0.7x the anchor's "
+     "FLOPs; decisively above g170-b6c96. Full checkpoint (resume-capable)."),
     ("vibego-s10-b10c128nbt-pat-max", "s10_b10pat_max.pt",
      "Maximal-data candidate: b10c128nbt-pat on the FULL pool (44M kata1 positions + weak-era "
      "x3 oversample, ~20% mix), 320k steps. See collection notes for final Stage-B numbers."),
