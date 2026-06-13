@@ -6,7 +6,7 @@ from the dated lab notes in `experiments/`; exact numbers, commands, and per-run
 
 ## TL;DR
 
-We built a single-GPU pipeline that trains small (0.8–2.6M param) KataGo-style nets purely from
+We built a single-GPU pipeline that trains small (0.8–4.2M param) KataGo-style nets purely from
 **public data**: katagoarchive.org self-play positions, relabeled by the public `kata1-b18c384nbt`
 net at **1 visit** (soft policy/winrate/score/ownership logit-forcing), plus our own
 KataGo-faithful PUCT search (validated at near-parity with KataGo's engine on the same net:
@@ -42,12 +42,16 @@ capacity, not data or steps, and (yet again) **val loss did not see it**: s10 an
 near-identical val (2.666 vs 2.662) but ~17 sL of Elo between them. When a small distilled net
 plateaus, add parameters, not data.
 
-The parity-attempt run (`s9_b10pat_parity`: 23.5M positions = kata1-2400sh + the full 471-shard
-weak-era pool at 16% mix, 240k steps) finished the study as champion: **−8.6 ± 2.4 sL [−13.3, −4.0] vs `g170e-b10c128`** (pooled over 192 games; the extra 128
-fresh-opening games alone measured −7.0 ± 2.8, Elo −112 [−180, −52]) — the best anchor result — while
-h2h vs s8 was +5.1 ± 6.4 (indistinguishable, full 64). The per-doubling gain has decayed to
-~5-8 sL: closing the last ~13 sL to b10c128 parity within this 2.6M-param arch looks like
-1-2 more data doublings (the full 44M-position pool) or a capacity step.
+A final +100k-step polish-continue of s11 (`s12`, same mix, lr warmdown tail) cut val further
+to 2.628 (study best) but was **Elo-flat** — h2h vs s11 +1.3 ± 4.3, anchor ~+5.6 ± 2.8 (tied).
+The cheap-polish recipe that gave s6 +120 Elo earlier did NOT transfer: s6's gain came from
+adding *diversity data* at the data-bound tier; continuing the same data at lower lr once
+capacity is relieved buys val, not strength. val≠Elo, one last time.
+
+(The 2.6M-param lineage that set this up: `s9` (kata1-2400sh + full weak-era pool, 240k steps)
+reached −8.6 ± 2.4 sL vs `g170e-b10c128` over 192 games at 0.7× the anchor's FLOPs — the best
+result *before* the capacity step, and the run that established the data plateau s11 then broke
+with width.)
 
 ## The non-obvious findings
 

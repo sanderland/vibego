@@ -25,6 +25,7 @@ OUT = os.path.join(REPO, "released")
 # (run id, mode) — mode "full" keeps optimizer (resume-capable), "model" strips to weights+meta
 SELECTION = [
     ("s11_b12c152_cap", "full"),      # OVERALL CHAMPION: beats g170e-b10c128 +7.7 sL (4.2M params, 2686 MF)
+    ("s12_b12c152_polish", "full"),   # co-champion: s11 +100k polish, best val 2.628, Elo-tied with s11
     ("s10_b10pat_max", "full"),       # maximal candidate (full 44M pool + era x3, 320k) — partial ckpts count
     ("s9_b10pat_parity", "full"),     # overall champion (23.5M pos, best vs b10c128: -12.8 sL)
     ("s8_b10pat_final", "full"),      # runner-up (h2h indistinguishable)
