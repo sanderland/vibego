@@ -67,3 +67,47 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Python / vibego
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.python-version
+uv.lock
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# checkpoints, runs, data
+*.pt
+*.ckpt
+checkpoints/
+runs/
+wandb/
+data/
+models/
+katago_bin/
+katago_cuda/
+katago_cuda128/
+*.bin.gz
+*.npz
+*.npy
+
+# local agent state
+.claude/
+
+# macOS
+.DS_Store
+
+# experiment results (machine-generated; curated writeups are the markdown notebooks)
+experiments/registry.jsonl
+experiments/frontier.png
+experiments/*.png
+
+# curated survival snapshots (models + artifacts chosen for post-pod continuation) — the ONLY
+# binaries tracked; everything else in /workspace dies with the pod credits
+!released/
+!released/*.pt
+!released/registry.jsonl
+!released/frontier.png

@@ -1,0 +1,35 @@
+# experiments/
+
+The lab notebook for vibego. The goal of the project is a tiny, hackable KataGo-style Go
+engine + training pipeline (nanoGPT/nanochat spirit) that's easy to run ablations on.
+
+## How this folder works
+
+- **One dated markdown per experiment**, named `YYYY-MM-DD-short-slug.md`. Each is a
+  self-contained record: the question, the setup (exact commands / configs / data), the
+  results (tables, numbers with error bars), and a conclusion. Write it while you run it.
+- **`SUMMARY.md`** — the digest. Key conclusions and a live "things to try / implement"
+  list. Ineffective experiments collapse to a single line; promising/open ones get expanded.
+  Append as you go; rewrite periodically so it stays short and current.
+- **`INDEX.md`** (this file) — explains the approach and lists every experiment file with
+  ~one line (setup + conclusion) for navigation.
+
+Conventions: all strength numbers come from a neutral **b18 judge** (`kata1-b18c384nbt`,
+256 visits). Game scores are points from Black's perspective unless stated. Prefer the
+**arena** (`scripts/match.py`, mean scoreLead ± stderr + Elo ± CI) or the per-move tool
+(`scripts/move_eval.py`) over single games — per-game sd is ~30–40 points.
+
+## Experiments
+
+| date | file | setup | conclusion |
+|------|------|-------|------------|
+| 2026-06-06 | [distillation-and-net-diagnosis](2026-06-06-distillation-and-net-diagnosis.md) | train depth-6 (~1M param) nets: supervised npz vs b18 logit-forcing; diagnose net vs b6c96 with `policy_eval` | distillation is ~70× more data-efficient; our net matches b18 at least as well as b6c96 (biased) → **the net is not the search bottleneck** |
+| 2026-06-07 | [search-param-porting](2026-06-07-search-param-porting.md) | port KataGo search params one by one (score utility, FPU blend, leaf-batch cap, LCB, valueWeightExponent) against the b6c96 proxy | **cautionary**: a long −108→−57 "progression" that was mostly chasing a measurement bug (see next); the genuinely-correct pieces (score utility, FPU mean, LCB, batch cap) were kept |
+| 2026-06-08 | [proxy-perspective-bug-and-parity](2026-06-08-proxy-perspective-bug-and-parity.md) | deterministic node-by-node trace (`trace_search.py`, batch=1, 10v, 9×9) to find where our search diverges from KataGo's | found a **perspective bug** in the proxy (Black-perspective evals fed as side-to-move); fixing it → **near parity (−8.7 ± 5.4, 35% win, Elo ≈ −104)**; reverted the recompute machinery (only masked the bug) |
+| 2026-06-08 (b) | [net-arena-baseline-and-nbt](2026-06-08-net-arena-baseline-and-nbt.md) | neutral raw-net judge (zhizi/b40 ref) + net-vs-net arena (distill_1m vs b6c96) as the acceptance test; add the nbt arch ladder | raw outputs ≈ b6c96 but the net costs **~150 Elo in games** (arena −33.4 ± 6.2, Elo −255) — **policy_eval ≠ game strength, judge by the arena**; nbt 6b/10b/15b ladder ready, b6c96nbt is the wasm pick |
+| 2026-06-08 (c) | [katago-intrinsic-ladder](2026-06-08-katago-intrinsic-ladder.md) | run real g170 b6c96/b10c128/b15c192 (+b18) intrinsic eval vs neutral b40 — the reference yardstick for the arch bake-off | the metric is **monotonic in size** (top-1 30→45→49→65) so it ranks archs; our distill_1m ≈ g170-b6c96, well short of b10c128 (use n≥500 for close calls) |
+| 2026-06-08 (d) | [flops-elo-frontier](2026-06-08-flops-elo-frontier.md) | first FLOPs↔Elo plane: bake-off + depth-width nets, wall-clock bench (CPU+MPS) + real arena Elo (after fixing deterministic self-play) | **dw7 (b7c106nbt) is the small-net champion** (both frontiers); **FLOPs flatters nbt** (~1.4× CPU / ~1.9× MPS) so on real CPU **old10b dominates nbt10b** — axis flips the 10b pick; Elo≠val-loss; found+fixed deterministic-self-play & policy_eval-deadlock bugs |
+| 2026-06-09 | [stageA-muon](2026-06-09-stageA-muon.md) | screening funnel batch a0: 9 configs GPU-packed, 8k steps, 48-shard subset, optimizer axis | **Muon (lr 0.04) beats AdamW by ~0.09 val-loss** on the same arch/FLOPs → adopted as the screening recipe |
+| 2026-06-09 (b) | [arch-screen](2026-06-09-arch-screen.md) | recipe sweep (r0) + broad arch screen (a2) under Muon 0.04: globmod/rwkv/linat/pattern vs the conv-nbt set | **lr 0.04 is the peak**, schedule/EMA noise at 8k; conv-nbt frontier holds on val — globmod/rwkv/linat **no val win under a conv-tuned recipe (not Elo-tested)** |
+| 2026-06-09 (c) | [data-distribution-and-stats](2026-06-09-data-distribution-and-stats.md) | audit the 75G set vs our play setup; tighten Stage-B statistics | **31% of the set is non-19×19** (`--only-19x19` added; A/B queued); komi randomization is fine (komi input); **paired scoreLead** is the Stage-B headline (resolved parity at ±5 pts where win-rate Elo gave ±214); arch-screen verdicts downgraded to "no val win" |
+| 2026-06-09 (d) | [scale-elo-and-cpu-frontier](2026-06-09-scale-elo-and-cpu-frontier.md) | Stage-B Elo on the 300-shard/30k scaling nets (s0) + fixed single-thread CPU bench (min-of-iters) + off-policy diagnostic plumbing | **data scaling → Elo directly** (dw7 −417→−124, no bend at 2.5M/44M pos); **pattern_embed flips to a decisive win at scale** (−48.6→−32.6 paired sL, ~0 FLOPs/CPU) — s1 combos queued; CPU-ms diverges from FLOPs **tier-dependently** (nbt's FLOP win vanishes at 6b, survives at 10b); depth costs wall-clock at matched FLOPs |
