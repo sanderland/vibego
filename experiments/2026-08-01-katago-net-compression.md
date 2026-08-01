@@ -400,3 +400,47 @@ uv run python scripts/kata_torch_check.py --synthetic \
 uv run python scripts/kata_diagnose.py --model models/b10c384h6nbttflrs.bin.gz \
     --npz katago/python/testdata/benchmark_data_1024.npz --n 96 --eval-n 96 --keep 0.75 0.5
 ```
+
+---
+
+# Phase 3 — a correction: low-rank *is* expressible in format v17
+
+Phase 1's format table put "low-rank / SVD factorization" in the **not expressible** row, on the
+reasoning that a factorization `W ≈ AB` needs two matmuls where the format has one slot. That is
+right in general and **wrong for the attention block**, which is the one place it matters — because
+the format already stores both of the block's paths in factored form:
+
+- **The value path.** `v_proj` maps `c_in → heads·v_head_dim`, `out_proj` maps
+  `heads·v_head_dim → c_out`, and `v_head_dim` is a plain header field. Each head's composed map
+  `M = W_v W_out` has rank at most `v_head_dim`; **shrinking the dimension between them *is* its
+  low-rank approximation**, in-format, no new layer type, and the stock engine loads it.
+- **The query path.** RoPE rotates interleaved channel pairs `(2p, 2p+1)` by position-dependent
+  angles, so an arbitrary change of basis would break the correspondence between a dimension and
+  its learned frequency — a free SVD is genuinely not available here. But each pair is an
+  independent additive term in the logit, so *selecting* pairs is free, and a dropped pair takes
+  its two columns of `q_proj`/`k_proj` and its row of `rope_freqs` with it. `q_head_dim` is also a
+  header field.
+
+Phase 2 concluded "the only lever with headroom needs a KataGo C++ change". That conclusion was
+wrong on the mechanism, and this is the correction.
+
+**A second correction, to how phase 2 read its own spectra.** Those numbers — `k_proj` needing 40%
+of its rank for 99% of spectral energy, against 94% for the FFN's `linear2` — are for the
+**concatenated multi-head** matrices, all 192×192. Compressing *those* would mix heads together,
+which is not expressible in the format and is not what the levers below do. The quantity that
+actually governs the value lever is each head's composed map `M = W_v W_out`, and that is
+**already rank-capped at `v_head_dim` = 32 by construction**. So the encouraging spectra were
+answering a different question than the one that decides this, and should not have been read as
+predicting headroom.
+
+Cost-wise the attention block is also where the FLOPs are. Per `nbt` block: the four projections
+are 213 MFLOP and the two N² attention matmuls 100 MFLOP, against 213 for the SwiGLU FFN and 106
+for the bottleneck convs — so **attention is 66% of a block**, and `v_head_dim` and `q_head_dim`
+between them scale all of it.
+
+**Selection method.** For the value path, the best rank-r approximation *under the input
+distribution*: with `C = E[x xᵀ]` measured at the block input over calibration positions,
+minimize `‖C^½(M − M′)‖_F` rather than `‖M − M′‖_F`, so rank is not spent on directions the data
+never visits. For the query path, keep the pairs with the highest `E[|q_p|²]·E[|k_p|²]`, both
+computable from the same `C`. Unlike head pruning, nothing is discarded outright — every head
+keeps a smaller subspace — which matters given the phase-2 finding that no head is idle.
