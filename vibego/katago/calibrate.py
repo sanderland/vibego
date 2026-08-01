@@ -106,7 +106,8 @@ def run_calibration(net: KataTorchModel, spatial: torch.Tensor, glob: torch.Tens
                 counts["__blocks__"] = counts.get("__blocks__", 0.0)
 
             # Trunk residual stream, sampled per board point, for the effective-rank estimate.
-            trunk = out["trunk_out"]
+            # Pre-norm, so the statistics describe the stream rather than the tip norm's gamma.
+            trunk = out["trunk_pre_norm"]
             vecs = trunk.permute(0, 2, 3, 1).reshape(-1, trunk.shape[1])
             on_board = mask.permute(0, 2, 3, 1).reshape(-1) > 0
             vecs = vecs[on_board].numpy()

@@ -340,6 +340,7 @@ class _Ctx:
         self.capture_heads = capture_heads
         self.capture_hidden = capture_hidden
         self.residuals: list = []
+        self.trunk_pre_norm = None
         self.head_out: dict = {}
         self.hidden_out: dict = {}
 
@@ -399,6 +400,10 @@ class KataTorchModel(nn.Module):
             if ctx.capture_residuals:
                 ctx.residuals.append((block.name, out.detach(), residual.detach()))
             out = out + residual
+        # The residual stream *before* the trunk-tip norm and activation. Per-channel statistics
+        # have to be read here: the tip RMSNorm's gamma rescales every channel and SiLU squashes
+        # negatives, so measuring after them reports the norm's parameters as much as the stream.
+        ctx.trunk_pre_norm = out.detach()
         return self.tip_act(self.tip_norm(out, ctx.mask))
 
     def forward(self, spatial, glob, capture: dict | None = None):
@@ -432,6 +437,7 @@ class KataTorchModel(nn.Module):
             "miscvalue": miscvalue,
             "ownership": ownership,
             "trunk_out": trunk_out,
+            "trunk_pre_norm": ctx.trunk_pre_norm,
         }
         if ctx.capture_residuals:
             result["residuals"] = ctx.residuals
