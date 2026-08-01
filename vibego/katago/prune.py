@@ -258,3 +258,168 @@ def narrow_ffn_everywhere(model: KataModel, keep_fraction: float,
     if not records:
         raise PruneError("no FFN blocks found")
     return records
+
+
+# --------------------------------------------------------------------------------------
+# Low-rank: the value path, which the file format already stores in factored form
+# --------------------------------------------------------------------------------------
+
+
+def _inverse_sqrt_and_sqrt(second_moment: np.ndarray, ridge: float = 1e-8):
+    """Symmetric square root and inverse square root of a PSD second-moment matrix."""
+    eig, vecs = np.linalg.eigh(second_moment.astype(np.float64))
+    floor = max(float(eig.max()), 1e-30) * ridge
+    eig = np.clip(eig, floor, None)
+    root = vecs @ np.diag(np.sqrt(eig)) @ vecs.T
+    inv_root = vecs @ np.diag(1.0 / np.sqrt(eig)) @ vecs.T
+    return root, inv_root
+
+
+def low_rank_value_path(block: TransformerAttentionBlock, keep_dim: int,
+                        second_moment: np.ndarray | None = None) -> PruneRecord:
+    """Shrink `v_head_dim` by low-rank approximation of each head's value->output map.
+
+    This is the lever the phase-1 format table missed. A low-rank factorization normally needs an
+    extra layer, which model format v17 cannot express -- but the value path is *already stored
+    factored*: `v_proj` maps c_in -> heads*v_head_dim and `out_proj` maps heads*v_head_dim ->
+    c_out, with `v_head_dim` a plain header field. Shrinking the dimension between them IS the
+    low-rank approximation, in-format, no new layer type, and the engine loads the result.
+
+    Per head the composed map is M = W_v @ W_out (c_in x c_out), of rank at most v_head_dim. We
+    replace it with its best rank-`keep_dim` approximation *under the input distribution*: with
+    C = E[x x^T] at the block's input, minimizing ||C^(1/2)(M - M')||_F rather than ||M - M'||_F,
+    because directions the data never visits are not worth spending rank on. Pass
+    `second_moment=None` to fall back to the plain (data-blind) SVD.
+
+    Unlike head pruning, nothing is discarded outright -- every head keeps a (smaller) subspace,
+    which matters here because the diagnostics found no head to be idle.
+
+    Caveat: attention's row mixing is a left factor (out = A @ X @ M), so optimizing over the rows
+    of X ignores that A contracts them. It is the standard approximation and it is conservative --
+    the true error is no larger.
+    """
+    if block.num_kv_heads != block.num_heads:
+        raise PruneError(f"{block.name}: grouped-query attention is not supported")
+    h, vd = block.num_heads, block.v_head_dim
+    if not 0 < keep_dim < vd:
+        raise PruneError(f"{block.name}: keep_dim must be in 1..{vd - 1}, got {keep_dim}")
+
+    c_in = block.v_proj.in_channels
+    c_out = block.out_proj.out_channels
+    w_v = block.v_proj.weight.astype(np.float64).reshape(c_in, h, vd)
+    w_out = block.out_proj.weight.astype(np.float64).reshape(h, vd, c_out)
+
+    if second_moment is None:
+        root = inv_root = np.eye(c_in)
+    else:
+        root, inv_root = _inverse_sqrt_and_sqrt(second_moment)
+
+    new_v = np.empty((c_in, h, keep_dim))
+    new_out = np.empty((h, keep_dim, c_out))
+    kept_energy = []
+    for i in range(h):
+        m = w_v[:, i, :] @ w_out[i]                      # (c_in, c_out), rank <= vd
+        u, s, vt = np.linalg.svd(root @ m, full_matrices=False)
+        kept_energy.append(float((s[:keep_dim] ** 2).sum() / max((s ** 2).sum(), 1e-30)))
+        new_v[:, i, :] = inv_root @ (u[:, :keep_dim] * s[:keep_dim])
+        new_out[i] = vt[:keep_dim]
+
+    block.v_proj.weight = new_v.reshape(c_in, h * keep_dim).astype(np.float32)
+    block.v_proj.out_channels = h * keep_dim
+    block.out_proj.weight = new_out.reshape(h * keep_dim, c_out).astype(np.float32)
+    block.out_proj.in_channels = h * keep_dim
+    block.v_head_dim = keep_dim
+    return PruneRecord("low_rank_value", f"{block.name}: v_head_dim {vd} -> {keep_dim} "
+                                         f"(kept {100 * np.mean(kept_energy):.1f}% of weighted "
+                                         f"spectral energy)")
+
+
+def low_rank_value_everywhere(model: KataModel, keep_fraction: float,
+                              moments: dict | None = None) -> list[PruneRecord]:
+    records = []
+    for _, block in iter_attention_blocks(model):
+        keep = max(1, int(round(block.v_head_dim * keep_fraction)))
+        if keep < block.v_head_dim:
+            moment = None if moments is None else moments.get(block.name)
+            records.append(low_rank_value_path(block, keep, moment))
+    if not records:
+        raise PruneError("no attention blocks with a reducible value path found")
+    return records
+
+
+def rope_pair_energy(block: TransformerAttentionBlock,
+                     second_moment: np.ndarray | None = None) -> np.ndarray:
+    """Per-(head, RoPE pair) importance: the product of the q and k energies that pair carries.
+
+    Each RoPE pair is a separable frequency channel of the attention logit -- the pair's
+    contribution to l_ij depends on the positions only through omega . (r_i - r_j) -- so its scale
+    is set by E[|q_p|^2] * E[|k_p|^2]. With C = E[x x^T] at the block input those are
+    trace(W^T C W) over the pair's two columns; without C it degrades to plain weight energy.
+    """
+    h, qd = block.num_heads, block.q_head_dim
+    pairs = qd // 2
+    c_in = block.q_proj.in_channels
+    w_q = block.q_proj.weight.astype(np.float64).reshape(c_in, h, pairs, 2)
+    w_k = block.k_proj.weight.astype(np.float64).reshape(c_in, h, pairs, 2)
+    c = np.eye(c_in) if second_moment is None else second_moment.astype(np.float64)
+    energy_q = np.einsum("chpi,cd,dhpi->hp", w_q, c, w_q)
+    energy_k = np.einsum("chpi,cd,dhpi->hp", w_k, c, w_k)
+    return energy_q * energy_k
+
+
+def drop_rope_pairs(block: TransformerAttentionBlock, keep_pairs: int,
+                    second_moment: np.ndarray | None = None) -> PruneRecord:
+    """Shrink `q_head_dim` by keeping only the highest-energy RoPE frequency pairs.
+
+    The query path cannot be factorized as freely as the value path: RoPE rotates the interleaved
+    channel pairs (2p, 2p+1) by position-dependent angles, so an arbitrary change of basis would
+    break the correspondence between a dimension and its learned frequency. What *is* free is
+    choosing which frequencies to keep -- each pair is an independent additive term in the logit --
+    and dropping a pair takes its two columns of `q_proj`/`k_proj` and its row of `rope_freqs` with
+    it. `q_head_dim` is a header field, so the result stays in-format.
+
+    Note this changes the attention softmax scale (1/sqrt(q_head_dim)), which the engine derives
+    from the header -- the surviving logits are therefore rescaled, not merely a subset.
+    """
+    if block.num_kv_heads != block.num_heads:
+        raise PruneError(f"{block.name}: grouped-query attention is not supported")
+    if not block.use_rope or not block.learnable_rope:
+        raise PruneError(f"{block.name}: only learnable-RoPE attention has pair structure to drop")
+    h, qd = block.num_heads, block.q_head_dim
+    pairs = qd // 2
+    if not 0 < keep_pairs < pairs:
+        raise PruneError(f"{block.name}: keep_pairs must be in 1..{pairs - 1}, got {keep_pairs}")
+
+    c_in = block.q_proj.in_channels
+    scores = rope_pair_energy(block, second_moment)
+    keep = np.sort(np.argsort(scores, axis=1)[:, ::-1][:, :keep_pairs], axis=1)  # (h, keep_pairs)
+
+    def slice_pairs(weight: np.ndarray) -> np.ndarray:
+        w = weight.reshape(c_in, h, pairs, 2)
+        out = np.stack([w[:, i, keep[i], :] for i in range(h)], axis=1)
+        return out.reshape(c_in, h * keep_pairs * 2)
+
+    block.q_proj.weight = slice_pairs(block.q_proj.weight)
+    block.q_proj.out_channels = h * keep_pairs * 2
+    block.k_proj.weight = slice_pairs(block.k_proj.weight)
+    block.k_proj.out_channels = h * keep_pairs * 2
+    block.rope_freqs = np.stack([block.rope_freqs[i, keep[i], :] for i in range(h)], axis=0)
+    block.q_head_dim = keep_pairs * 2
+    kept = float(np.mean([scores[i, keep[i]].sum() / max(scores[i].sum(), 1e-30) for i in range(h)]))
+    return PruneRecord("drop_rope_pairs",
+                       f"{block.name}: q_head_dim {qd} -> {keep_pairs * 2} "
+                       f"(kept {100 * kept:.1f}% of q/k energy)")
+
+
+def drop_rope_pairs_everywhere(model: KataModel, keep_fraction: float,
+                               moments: dict | None = None) -> list[PruneRecord]:
+    records = []
+    for _, block in iter_attention_blocks(model):
+        pairs = block.q_head_dim // 2
+        keep = max(1, int(round(pairs * keep_fraction)))
+        if keep < pairs:
+            moment = None if moments is None else moments.get(block.name)
+            records.append(drop_rope_pairs(block, keep, moment))
+    if not records:
+        raise PruneError("no learnable-RoPE attention blocks found")
+    return records

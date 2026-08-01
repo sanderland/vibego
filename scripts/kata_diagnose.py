@@ -44,10 +44,12 @@ from vibego.katago.calibrate import (  # noqa: E402
 )
 from vibego.katago.cost import model_cost  # noqa: E402
 from vibego.katago.prune import (  # noqa: E402
+    drop_rope_pairs_everywhere,
     ffn_importance,
     head_importance,
     iter_attention_blocks,
     iter_ffn_blocks,
+    low_rank_value_everywhere,
     narrow_ffn_everywhere,
     prune_heads_everywhere,
 )
@@ -113,6 +115,8 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=128, help="calibration positions")
     ap.add_argument("--eval-n", type=int, default=128, help="held-out positions for the head-to-head")
     ap.add_argument("--batch", type=int, default=8)
+    ap.add_argument("--skip-heads", action="store_true",
+                    help="omit the head-pruning arm (already shown to be hopeless)")
     ap.add_argument("--keep", type=float, nargs="*", default=[0.75, 0.5],
                     help="keep fractions to test in the criterion head-to-head")
     args = ap.parse_args()
@@ -196,13 +200,29 @@ def main() -> None:
         variants.append((f"ffn {keep:.2f} weight-only", "ffn", keep, None))
         variants.append((f"ffn {keep:.2f} activation", "ffn", keep, act_ffn))
     for keep in args.keep:
-        variants.append((f"heads {keep:.2f} weight-only", "heads", keep, None))
-        variants.append((f"heads {keep:.2f} activation", "heads", keep, act_heads))
+        # The in-format low-rank lever: v_head_dim is a header field, so shrinking the dimension
+        # between v_proj and out_proj IS a low-rank factorization of each head's value->output map.
+        variants.append((f"v_dim {keep:.2f} plain-SVD", "vdim", keep, None))
+        variants.append((f"v_dim {keep:.2f} data-aware", "vdim", keep, cal.input_moment))
+        # The query path's counterpart: keep the highest-energy RoPE frequency pairs.
+        variants.append((f"q_dim {keep:.2f} data-aware", "qdim", keep, cal.input_moment))
+        variants.append((f"q+v {keep:.2f} data-aware", "qv", keep, cal.input_moment))
+    if not args.skip_heads:
+        for keep in args.keep:
+            variants.append((f"heads {keep:.2f} weight-only", "heads", keep, None))
+            variants.append((f"heads {keep:.2f} activation", "heads", keep, act_heads))
 
     for label, kind, keep, importance in variants:
         pruned = copy.deepcopy(model)
         if kind == "ffn":
             narrow_ffn_everywhere(pruned, keep, importance)
+        elif kind == "vdim":
+            low_rank_value_everywhere(pruned, keep, importance)
+        elif kind == "qdim":
+            drop_rope_pairs_everywhere(pruned, keep, importance)
+        elif kind == "qv":
+            drop_rope_pairs_everywhere(pruned, keep, importance)
+            low_rank_value_everywhere(pruned, keep, importance)
         else:
             prune_heads_everywhere(pruned, keep, importance)
         cost = model_cost(pruned)

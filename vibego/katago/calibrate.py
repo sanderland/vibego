@@ -52,6 +52,7 @@ class Calibration:
     block_relative_norm: dict = field(default_factory=dict)  # block name -> ||res|| / ||in||
     trunk_singular_values: np.ndarray | None = None
     trunk_channel_variance: np.ndarray | None = None
+    input_moment: dict = field(default_factory=dict)  # attention block name -> E[x x^T] at its input
     policy: np.ndarray | None = None                      # parent policy, for damage measurement
     score_lead: np.ndarray | None = None
     winrate: np.ndarray | None = None
@@ -68,13 +69,16 @@ def run_calibration(net: KataTorchModel, spatial: torch.Tensor, glob: torch.Tens
     n = len(spatial)
     counts: dict = {}
     trunk_rows = []
+    cal_moments: dict = {}
+    moment_counts: dict = {}
     policies, leads, winrates = [], [], []
     rng = np.random.default_rng(seed)
 
     with torch.no_grad():
         for i in range(0, n, batch):
             sp, gl = spatial[i:i + batch], glob[i:i + batch]
-            out = net(sp, gl, capture={"residuals": True, "heads": True, "hidden": True})
+            out = net(sp, gl, capture={"residuals": True, "heads": True, "hidden": True,
+                                       "input_moment": True})
             policies.append(net.policy(out).numpy())
             leads.append(net.score_lead(out).numpy())
             winrates.append(net.winrate(out).numpy())
@@ -105,6 +109,11 @@ def run_calibration(net: KataTorchModel, spatial: torch.Tensor, glob: torch.Tens
                 _accumulate(cal.block_relative_norm, name, rel.sum().numpy().reshape(()))
                 counts["__blocks__"] = counts.get("__blocks__", 0.0)
 
+            for name, moment in out["input_moment"].items():
+                prev = cal_moments.get(name)
+                cal_moments[name] = moment.numpy() if prev is None else prev + moment.numpy()
+                moment_counts[name] = moment_counts.get(name, 0.0) + float(flat_mask.sum())
+
             # Trunk residual stream, sampled per board point, for the effective-rank estimate.
             # Pre-norm, so the statistics describe the stream rather than the tip norm's gamma.
             trunk = out["trunk_pre_norm"]
@@ -121,6 +130,9 @@ def run_calibration(net: KataTorchModel, spatial: torch.Tensor, glob: torch.Tens
     for name in cal.block_angles:
         cal.block_angles[name] = float(cal.block_angles[name]) / n
         cal.block_relative_norm[name] = float(cal.block_relative_norm[name]) / n
+
+    for name, moment in cal_moments.items():
+        cal.input_moment[name] = moment / max(moment_counts[name], 1.0)
 
     trunk_matrix = np.concatenate(trunk_rows)
     centered = trunk_matrix - trunk_matrix.mean(axis=0, keepdims=True)

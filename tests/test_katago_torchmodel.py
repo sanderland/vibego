@@ -153,3 +153,83 @@ def test_calibration_dataclass_defaults_are_independent():
     a, b = Calibration(), Calibration()
     a.head_importance["x"] = np.zeros(1)
     assert "x" not in b.head_importance
+
+
+def test_low_rank_value_path_at_full_rank_is_a_no_op():
+    """Factorizing to the dimension it already has must reproduce the net exactly -- that pins
+    the SVD reconstruction, the whitening round-trip, and the reshapes all at once."""
+    from vibego.katago.prune import low_rank_value_path
+
+    model = make_model()
+    attn = model.trunk.blocks[2].blocks[0]
+    spatial, glob = _inputs()
+    with torch.no_grad():
+        before = _net(model)(spatial, glob)["policy_logits"]
+    # keep_dim must be < v_head_dim, so widen by one and factor straight back down.
+    import numpy as np
+    h, vd, c_in = attn.num_heads, attn.v_head_dim, attn.v_proj.in_channels
+    c_out = attn.out_proj.out_channels
+    wide_v = np.zeros((c_in, h, vd + 1), dtype=np.float32)
+    wide_out = np.zeros((h, vd + 1, c_out), dtype=np.float32)
+    wide_v[:, :, :vd] = attn.v_proj.weight.reshape(c_in, h, vd)
+    wide_out[:, :vd, :] = attn.out_proj.weight.reshape(h, vd, c_out)
+    attn.v_proj.weight = wide_v.reshape(c_in, h * (vd + 1))
+    attn.v_proj.out_channels = h * (vd + 1)
+    attn.out_proj.weight = wide_out.reshape(h * (vd + 1), c_out)
+    attn.out_proj.in_channels = h * (vd + 1)
+    attn.v_head_dim = vd + 1
+
+    low_rank_value_path(attn, vd)
+    assert attn.v_head_dim == vd
+    with torch.no_grad():
+        after = _net(model)(spatial, glob)["policy_logits"]
+    assert torch.allclose(before, after, atol=1e-4), (before - after).abs().max()
+
+
+def test_low_rank_value_path_keeps_the_file_loadable():
+    from vibego.katago.binmodel import model_bytes, read_model_bytes
+    from vibego.katago.prune import low_rank_value_path
+    from tests.test_katago_prune import _check_engine_invariants
+
+    model = make_model()
+    low_rank_value_path(model.trunk.blocks[2].blocks[0], 2)
+    _check_engine_invariants(model)
+    reloaded = read_model_bytes(model_bytes(model))
+    _check_engine_invariants(reloaded)
+    assert reloaded.trunk.blocks[2].blocks[0].v_head_dim == 2
+
+
+def test_low_rank_value_path_reduces_flops():
+    from vibego.katago.cost import model_cost
+    from vibego.katago.prune import low_rank_value_everywhere
+
+    model = make_model()
+    before = model_cost(model).total.flops
+    low_rank_value_everywhere(model, 0.5)
+    assert model_cost(model).total.flops < before
+
+
+def test_dropping_rope_pairs_keeps_the_file_loadable_and_cuts_flops():
+    from vibego.katago.binmodel import model_bytes, read_model_bytes
+    from vibego.katago.cost import model_cost
+    from vibego.katago.prune import drop_rope_pairs
+    from tests.test_katago_prune import _check_engine_invariants
+
+    model = make_model()
+    attn = model.trunk.blocks[2].blocks[0]
+    before_dim, before_flops = attn.q_head_dim, model_cost(model).total.flops
+    drop_rope_pairs(attn, attn.q_head_dim // 2 - 1)
+    assert attn.q_head_dim == before_dim - 2
+    assert attn.rope_freqs.shape == (attn.num_heads, attn.q_head_dim // 2, 2)
+    _check_engine_invariants(model)
+    _check_engine_invariants(read_model_bytes(model_bytes(model)))
+    assert model_cost(model).total.flops < before_flops
+
+
+def test_rope_pair_energy_is_per_head_and_positive():
+    from vibego.katago.prune import rope_pair_energy
+
+    attn = make_model().trunk.blocks[2].blocks[0]
+    scores = rope_pair_energy(attn)
+    assert scores.shape == (attn.num_heads, attn.q_head_dim // 2)
+    assert np.all(scores > 0)

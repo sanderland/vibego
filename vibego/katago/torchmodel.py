@@ -250,6 +250,13 @@ class _AttentionBlock(nn.Module):
         seq = x.view(n, c, -1).permute(0, 2, 1)
         xn = self.norm(seq)
         s = seq.shape[1]
+        if ctx.capture_input_moment:
+            # E[x x^T] over on-board positions, at the input to the q/k/v projections. This is
+            # the metric a data-aware low-rank approximation of the projections has to use.
+            flat = xn * ctx.mask.reshape(n, -1, 1)
+            moment = torch.einsum("nsc,nsd->cd", flat, flat).double()
+            prev = ctx.input_moment.get(self.name)
+            ctx.input_moment[self.name] = moment if prev is None else prev + moment
 
         q = self.q_proj(xn).view(n, s, self.num_heads, self.q_head_dim)
         k = self.k_proj(xn).view(n, s, self.num_heads, self.q_head_dim)
@@ -332,13 +339,16 @@ def _build_block(desc, pos_len: int) -> nn.Module:
 class _Ctx:
     """Per-forward state: the board mask, plus whatever the caller asked to capture."""
 
-    def __init__(self, mask, capture_residuals=False, capture_heads=False, capture_hidden=False):
+    def __init__(self, mask, capture_residuals=False, capture_heads=False, capture_hidden=False,
+                 capture_input_moment=False):
         self.mask = mask
         self.mask_sum_hw = torch.sum(mask, dim=(2, 3), keepdim=True)
         self.has_offboard = bool((mask == 0).any())
         self.capture_residuals = capture_residuals
         self.capture_heads = capture_heads
         self.capture_hidden = capture_hidden
+        self.capture_input_moment = capture_input_moment
+        self.input_moment: dict = {}
         self.residuals: list = []
         self.trunk_pre_norm = None
         self.head_out: dict = {}
@@ -410,7 +420,7 @@ class KataTorchModel(nn.Module):
         capture = capture or {}
         mask = spatial[:, 0:1].contiguous()
         ctx = _Ctx(mask, capture.get("residuals", False), capture.get("heads", False),
-                   capture.get("hidden", False))
+                   capture.get("hidden", False), capture.get("input_moment", False))
         trunk_out = self.trunk_forward(spatial, glob, ctx)
 
         p1 = self.p1_conv(trunk_out)
@@ -445,6 +455,8 @@ class KataTorchModel(nn.Module):
             result["head_out"] = ctx.head_out
         if ctx.capture_hidden:
             result["hidden_out"] = ctx.hidden_out
+        if ctx.capture_input_moment:
+            result["input_moment"] = ctx.input_moment
         return result
 
     # -- readable outputs --------------------------------------------------------------
