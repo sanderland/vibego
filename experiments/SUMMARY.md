@@ -63,6 +63,21 @@ dated files for full detail.
 - **Our ~1M-param net matches b18 at least as well as b6c96 does** on policy/winrate/score/
   ownership (biased — we distilled from b18) → capacity is not the wall; data/steps/targets are.
 
+- **The v1.17 KataGo transformer nets are dense — post-hoc compression without healing does not
+  pay** (2026-08-01). `b10c384h6nbttflrs`: heads exactly tile the bottleneck (6×32=192), SwiGLU is
+  at the standard 8/3 ratio, all 10 blocks cost the same FLOPs. Cheapest structural edit (−4.4%
+  FLOPs) already costs 0.58 scoreLead; heads are the worst lever (−7.2% FLOPs → −7.2 sL), FFN
+  width the best (−11% → −1.8 sL). Quantization is dropped for a deployment reason, not an
+  accuracy one: **no KataGo backend has int8 kernels**, so there is no speedup to weigh the loss
+  against.
+- **Policy agreement / KL is a bad screen for compression damage** — a block-drop scored top-1
+  0.90 and the *lowest* KL of six variants while losing 5.1 scoreLead. Quantization/pruning error
+  is a deterministic function of the position, i.e. bias, and search does not average bias away.
+  Screen on value/score, not on policy.
+- **`b10c384h6nbttflrs` is a better teacher than our pinned `kata1-b18c384nbt`** — stronger per
+  visit at 10.6M params / 9.56 GFLOP vs 26.4M / 18.9 GFLOP. Same relabel throughput, better
+  targets. Costs an engine bump to v1.17.x and a re-baseline.
+
 ## Search: things that worked vs didn't (all KataGo-faithful, re-validated post-bug-fix)
 
 - **Kept** (correct & helpful): score in the PUCT utility (atan static+dynamic), FPU base =
@@ -114,3 +129,8 @@ dated files for full detail.
 - `scripts/policy_eval.py` — raw net agreement (policy/winrate/score/ownership) vs a reference.
   Use the **neutral** zhizi/b40 as `--ref` (not b18, our teacher). NB: raw agreement ≠ game strength.
 - `vibego/engine/proxy.py` — run our MCTS on an external KataGo net (search-isolation test).
+- `vibego/katago/` + `scripts/kata_inspect.py` / `kata_prune.py` — open a released KataGo
+  `.bin.gz` directly (v8–17, incl. the v1.17 transformers), report params/FLOPs per block, and
+  structurally prune it back into a file the **stock engine loads** — so pruned nets go straight
+  into `policy_eval` / `match` / `arena` with no new inference code. Byte-exact round-trip is the
+  contract, verified on 9 real nets.
