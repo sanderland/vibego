@@ -43,6 +43,7 @@ from vibego.katago.prune import (  # noqa: E402
     drop_blocks,
     drop_inner_pairs,
     drop_rope_pairs_everywhere,
+    flush_subnormal_weights,
     low_rank_value_everywhere,
     narrow_ffn_everywhere,
     prune_heads_everywhere,
@@ -71,6 +72,9 @@ def main() -> None:
                     help="fraction of v_head_dim to keep (low-rank value path, in-format)")
     ap.add_argument("--q-dim-keep", type=float,
                     help="fraction of RoPE frequency pairs to keep (shrinks q_head_dim)")
+    ap.add_argument("--flush-subnormal", action="store_true",
+                    help="zero subnormal weights: no capacity change, but x86 handles subnormal "
+                         "operands in microcode and KataGo never sets flush-to-zero")
     ap.add_argument("--calibrate", metavar="NPZ",
                     help="training-data shard to calibrate on. Without it, selection falls back "
                          "to data-blind weight magnitudes, which measurably costs quality.")
@@ -84,10 +88,10 @@ def main() -> None:
     if not args.dry_run and not args.out:
         ap.error("--out is required unless --dry-run")
     levers = (args.drop_blocks, args.drop_inner_pairs, args.heads_keep, args.ffn_keep,
-              args.v_dim_keep, args.q_dim_keep)
+              args.v_dim_keep, args.q_dim_keep, args.flush_subnormal)
     if not any(levers):
         ap.error("nothing to do: pass at least one of --drop-blocks/--drop-inner-pairs/"
-                 "--heads-keep/--ffn-keep/--v-dim-keep/--q-dim-keep")
+                 "--heads-keep/--ffn-keep/--v-dim-keep/--q-dim-keep/--flush-subnormal")
 
     model = read_model(args.model)
     before = model_cost(model, board=args.board)
@@ -124,6 +128,8 @@ def main() -> None:
             records += prune_heads_everywhere(model, args.heads_keep, act_heads)
         if args.ffn_keep:
             records += narrow_ffn_everywhere(model, args.ffn_keep, act_ffn)
+        if args.flush_subnormal:
+            records.append(flush_subnormal_weights(model))
     except PruneError as e:
         sys.exit(f"error: {e}")
 
@@ -167,6 +173,8 @@ def _default_suffix(args) -> str:
         bits.append(f"v{int(round(args.v_dim_keep * 100))}")
     if args.q_dim_keep:
         bits.append(f"q{int(round(args.q_dim_keep * 100))}")
+    if args.flush_subnormal:
+        bits.append("ftz")
     return "-".join(bits) or "pruned"
 
 

@@ -423,3 +423,35 @@ def drop_rope_pairs_everywhere(model: KataModel, keep_fraction: float,
     if not records:
         raise PruneError("no learnable-RoPE attention blocks found")
     return records
+
+
+# --------------------------------------------------------------------------------------
+# Not compression at all: flushing subnormal weights
+# --------------------------------------------------------------------------------------
+
+
+def flush_subnormal_weights(model: KataModel, threshold: float = 1.17549435e-38) -> PruneRecord:
+    """Zero every weight smaller in magnitude than the smallest normal float32.
+
+    Numerically this is nothing -- subnormals below ~1.2e-38 cannot affect a net whose
+    activations are order 1. Computationally it can be everything: x86 handles subnormal operands
+    in microcode, at roughly two orders of magnitude the cost of normal arithmetic, and KataGo's
+    C++ never sets the SSE flush-to-zero / denormals-are-zero flags, so its CPU backend pays that
+    cost on every one it meets.
+
+    This is the cheapest possible edit -- it removes no capacity, changes no shape, and leaves a
+    file the stock engine loads. Measure before assuming it matters: nets differ enormously in how
+    many subnormals they carry.
+    """
+    flushed = total = 0
+    for _, layer in model.iter_layers():
+        weight = getattr(layer, "weight", None)
+        if weight is None or not isinstance(weight, np.ndarray):
+            continue
+        small = (np.abs(weight) < threshold) & (weight != 0)
+        flushed += int(small.sum())
+        total += int(weight.size)
+        weight[small] = 0.0
+    return PruneRecord("flush_subnormal",
+                       f"zeroed {flushed:,} subnormal weights of {total:,} "
+                       f"({100 * flushed / max(total, 1):.4f}%)")

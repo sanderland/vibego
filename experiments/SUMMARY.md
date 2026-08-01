@@ -63,6 +63,21 @@ dated files for full detail.
 - **Our ~1M-param net matches b18 at least as well as b6c96 does** on policy/winrate/score/
   ownership (biased — we distilled from b18) → capacity is not the wall; data/steps/targets are.
 
+- **The v1.17 KataGo transformer nets carry 4.2-27% SUBNORMAL weights, and that is the whole CPU
+  story** (2026-08-01 phase 4). x86 runs subnormal operands in microcode at ~100x the cost, and
+  KataGo sets flush-to-zero nowhere in `cpp/`. Zeroing them is numerically inert and lives in the
+  weight file, so on the **unmodified** engine at batch 1: `b10c384h6nbttflrs` **5.4x faster**,
+  `b10c512h8nbt3tflrs` **13.7x faster**, outputs **bit-identical**. Every conv net we have
+  (b18c384nbt, g170-b6c96, g170e-b10c128) has exactly 0.0000% - this arrived with the transformer
+  recipe. `scripts/kata_prune.py --flush-subnormal`. **Check our own nets before trusting any
+  CPU-ms number.**
+- **A benchmark result that cannot be right is a finding, not noise.** An 11% FLOP cut appearing to
+  buy 3.7x wall-clock is what led to the above. Ruled out in order: power-of-two stride (512->511
+  moves it 6%, not 4x), matmul shape (a bare GEMM scales linearly in the width), batching (per-eval
+  cost flat from batch 1 to 8).
+- **Whiten the SVD.** Data-aware low-rank (minimize ||C^(1/2)(M - M')||_F with C = E[x x^T] at the
+  layer input, not ||M - M'||_F) beat plain SVD by **7x** in damage at equal FLOPs. Far bigger than
+  the 1.4-2.8x that activation-awareness bought for magnitude pruning.
 - **Activation-aware selection halves pruning damage; it still does not make post-hoc pruning pay**
   (2026-08-01 phase 2). At equal FLOPs, activation-weighted FFN selection cuts |Δ scoreLead| from
   1.96 → 1.25 at −11% FLOPs and 6.12 → 3.01 at −22%, vs the weight-only criterion — so weight-norm

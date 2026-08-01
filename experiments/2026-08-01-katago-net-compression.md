@@ -444,3 +444,111 @@ minimize `‖C^½(M − M′)‖_F` rather than `‖M − M′‖_F`, so rank is
 never visits. For the query path, keep the pairs with the highest `E[|q_p|²]·E[|k_p|²]`, both
 computable from the same `C`. Unlike head pruning, nothing is discarded outright — every head
 keeps a smaller subspace — which matters given the phase-2 finding that no head is idle.
+
+## [5b] Head-to-head at equal FLOPs, including the low-rank levers
+
+96 held-out positions, damage against the unpruned parent:
+
+| variant | ΔFLOP | policy top-1 | KL | \|Δ lead\| |
+|---|---|---|---|---|
+| FFN keep 0.75, activation-aware | −11.1% | 0.71 | **0.208** | **1.27** |
+| FFN keep 0.50, activation-aware | −22.3% | 0.40 | 0.814 | 2.84 |
+| FFN keep 0.25, activation-aware | −33.4% | 0.16 | 1.814 | 7.38 |
+| v_dim keep 0.75, plain SVD | −5.4% | 0.50 | 1.182 | 7.52 |
+| v_dim keep 0.75, **data-aware** | −5.4% | 0.70 | **0.160** | **1.11** |
+| v_dim keep 0.50, plain SVD | −10.8% | 0.29 | 1.853 | 18.79 |
+| v_dim keep 0.50, **data-aware** | −10.8% | 0.54 | 0.590 | 2.69 |
+| v_dim keep 0.25, plain SVD | −16.2% | 0.10 | 2.688 | 34.53 |
+| v_dim keep 0.25, **data-aware** | −16.2% | 0.33 | 1.618 | 5.74 |
+
+1. **The low-rank hypothesis was wrong.** At matched FLOPs the value-path factorization loses to
+   FFN narrowing: at ~−11% it costs 2.69 points against FFN's 1.27. Per FLOP removed, FFN is about
+   1.8× more efficient. The reason is the one that has explained everything on this branch — each
+   head's value map is *already* rank-capped at `v_head_dim`, so there is no spare rank to take.
+2. **But whitening the SVD by the input covariance is worth 7×.** 7.52 → 1.11 points at keep 0.75,
+   18.79 → 2.69 at keep 0.50. The data-aware objective matters far more for a low-rank
+   approximation than activation-awareness did for magnitude pruning (1.4–2.8× there). If you take
+   one method away from this entry, take that one.
+3. Ranking the in-format levers by lead damage per % of FLOPs removed, each with its best
+   criterion: **FFN width (0.11) ≈ inner-pair drop (0.13) > low-rank value path (0.21) > whole
+   block drop (0.52) > heads (0.85)**.
+
+---
+
+# Phase 4 — the actual CPU result: 4.2–27% of these nets' weights are subnormal
+
+Benchmarking the FFN-pruned net against its parent on CPU produced a number that could not be
+right: **an 11% FLOP cut buying a 3.7× wall-clock speedup** in the stock engine. Chasing that is
+what produced the useful finding, and it is not about compression at all.
+
+Ruling things out: it is not a power-of-two stride pathology (FFN 512 → 511 changes wall-clock by
+6%, not 4×). It is not the matmul shape (a bare `(361×192)@(192×h)` scales *linearly* in h — 604 µs
+at 512, 458 µs at 384). It is not batching (per-eval cost is unchanged from batch 1 to batch 8).
+
+It is **denormals**. `b10c384h6nbttflrs` carries **4.22% subnormal weights** (444,703 of 10.5M), and
+x86 handles subnormal operands in microcode at roughly two orders of magnitude the cost of normal
+arithmetic. Importance-based FFN pruning had been speeding the net up mostly by deleting the
+smallest-magnitude units — which is exactly where the subnormals live (4.22% → 0.74% at keep 0.75
+→ 0.00% at keep 0.50).
+
+Confirmed directly, single-thread batch-1 torch, same weights: **2551 ms/eval with denormals
+enabled, 205 ms/eval with `torch.set_flush_denormal(True)` — 12.5×, changing nothing.**
+
+**KataGo never sets flush-to-zero.** There is no `_MM_SET_FLUSH_ZERO_MODE`, no `-ffast-math`,
+nothing setting MXCSR anywhere in `cpp/` outside vendored third-party code. So its CPU backend pays
+this on every subnormal it meets.
+
+## The fix, and what it is worth
+
+Zeroing subnormal weights is numerically inert — nothing below 1.2e-38 can affect a net whose
+activations are order 1 — and it is expressible in the weight file, so it works on the
+**unmodified** engine today. `scripts/kata_prune.py --flush-subnormal`.
+
+Stock KataGo v1.17.1, eigen (CPU) backend, raw evals at batch 1, single analysis thread:
+
+| net | subnormal weights | parent | subnormals→0 | speedup |
+|---|---|---|---|---|
+| `b10c384h6nbttflrs` | 4.22% | 4.04 s/eval | 0.74 s/eval | **5.4×** |
+| `b10c512h8nbt3tflrs` | 15.94% | 25.9 s/eval | 1.89 s/eval | **13.7×** |
+
+Outputs are **bit-identical** — over 40 positions, max |Δpolicy| = 0, max |Δwinrate| = 0,
+max |ΔscoreLead| = 0, top-1 identical on 100%. This is not a tradeoff.
+
+## It is specific to the new transformer nets, and it scales with size
+
+| net | params | subnormal weights |
+|---|---|---|
+| `b10c384h6nbttflrs` (v15) | 10.5 M | **4.22%** |
+| `b10c512h8nbt3tflrs` (v17) | 28.5 M | **15.94%** |
+| `b11c768h12nbt3tflrs` (v17) | 70.4 M | **27.23%** |
+| `kata1-b18c384nbt` (v14, conv-nbt) | 26.3 M | 0.0000% |
+| `g170e-b10c128` (v8) | 3.0 M | 0.0000% |
+| `g170-b6c96` (v8) | 1.0 M | 0.0000% |
+
+Every conv net has exactly zero. Every transformer net is affected, and the largest is over a
+quarter subnormal. Whatever produces it — the transformer training recipe, weight decay against
+RMSNorm's scale invariance — it arrived with the new architecture.
+
+## What this changes
+
+- **The phase-2/3 verdict was a GPU verdict.** "Post-hoc compression does not pay" holds on FLOPs.
+  On CPU the largest available win is not compression at all, costs nothing, and is available today
+  by rewriting the weight file.
+- **Worth reporting upstream.** Setting FTZ/DAZ once at startup in KataGo's CPU backends would give
+  every CPU user of the v1.17 nets a multiple-times speedup with no downside, and would not need
+  the weight-file workaround.
+- **For this repo's own frontier:** the CPU-ms column is not a refinement of the FLOPs axis, it is
+  a different axis. Here it disagreed by 13×, and no amount of care with FLOPs would have found it.
+  Worth checking our own trained nets for subnormal weights before trusting any CPU-ms number.
+
+## Repro (phase 4)
+
+```bash
+# how many subnormals does a net carry, and what does removing them cost? (nothing)
+uv run python scripts/kata_prune.py models/b10c384h6nbttflrs.bin.gz --flush-subnormal \
+    --out models/b10c384h6nbttflrs-ftz.bin.gz
+
+# time it in the stock engine, batch 1
+katago analysis -model models/b10c384h6nbttflrs.bin.gz -config CFG \
+    -override-config numAnalysisThreads=1,nnRandomize=false < queries.jsonl
+```

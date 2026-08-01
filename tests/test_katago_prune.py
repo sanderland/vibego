@@ -162,3 +162,33 @@ def test_model_names_stay_engine_legal():
     name = sanitize_name("kata1-b18c384nbt-s999/d444", "ffn0.75")
     assert all(c.isalnum() or c in "_-" for c in name)
     assert len(name) <= 96
+
+
+def test_flushing_subnormals_changes_nothing_a_net_can_notice():
+    """Subnormals are below 1.2e-38; zeroing them must be numerically inert while removing the
+    operands that make x86 fall into microcode."""
+    import numpy as np
+
+    from vibego.katago.prune import flush_subnormal_weights
+
+    model = make_model()
+    ffn = model.trunk.blocks[2].blocks[1]
+    ffn.linear1.weight[0, 0] = 1e-40      # subnormal
+    ffn.linear1.weight[0, 1] = 1e-30      # normal, must survive
+    record = flush_subnormal_weights(model)
+    assert ffn.linear1.weight[0, 0] == 0.0
+    assert ffn.linear1.weight[0, 1] == np.float32(1e-30)
+    assert "1 subnormal" in record.detail or "zeroed" in record.detail
+
+
+def test_flushing_subnormals_leaves_shapes_and_the_file_untouched():
+    from vibego.katago.binmodel import model_bytes, read_model_bytes
+    from vibego.katago.cost import model_cost
+    from vibego.katago.prune import flush_subnormal_weights
+
+    model = make_model()
+    before = model_cost(model)
+    flush_subnormal_weights(model)
+    after = model_cost(model)
+    assert (after.total.params, after.total.flops) == (before.total.params, before.total.flops)
+    _check_engine_invariants(read_model_bytes(model_bytes(model)))
