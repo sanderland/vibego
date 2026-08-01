@@ -186,3 +186,151 @@ uv run python scripts/policy_eval.py --src data --n 400 \
   --engine "full=katago analysis -config $CFG -model models/b10c384h6nbttflrs.bin.gz" \
   --engine "ffn384=katago analysis -config $CFG -model models/ffn384.bin.gz"
 ```
+
+---
+
+# Phase 2 — the torch forward, the four diagnostics, and activation-aware selection
+
+Phase 1's screen used a weight-only pruning criterion, which is the *floor* of what pruning can
+do. Phase 2 builds the forward pass that lets us look at activations, checks it against the stock
+engine, and then answers the two questions that were open: **is there any structural slack in
+these nets at all**, and **does a better criterion rescue post-hoc pruning?**
+
+## The forward pass, and what it took to validate it
+
+`vibego/katago/torchmodel.py` runs a parsed `.bin.gz` in torch — nbt blocks, learnable 2D RoPE,
+SwiGLU FFN, per-position and spatial trunk RMSNorm, board masking. `scripts/kata_torch_check.py`
+compares it against the stock engine.
+
+Getting a clean comparison surfaced two things worth recording, both of which look exactly like a
+bug in your forward if you don't know about them:
+
+1. **`nnRandomize = true` is on in `analysis_example.cfg`.** It applies a random dihedral symmetry
+   to every evaluation. The nets are only approximately symmetry-equivariant, so this alone moved
+   policy top-1 agreement from 0.94 to 0.39 on near-symmetric positions. Any raw-net comparison
+   against the engine needs `-override-config nnRandomize=false`.
+2. **The engine forces no-result probability to zero** under superko + area scoring and
+   renormalizes, and scales `lead` by `(1 - P(no result))`. Reproducing its winrate means doing
+   the same (`nneval.cpp`).
+
+The other lesson is about the *data*: reconstructing an analysis query from a training row is
+inherently lossy. Training data is deliberately rule- and komi-randomized (54 distinct rule
+combinations in one 1024-row shard, komi from −79 to +77, half of them off the half-integer grid
+the analysis API accepts), and a query built from `initialStones` carries no move history. So the
+check has a second mode using positions whose V7 features are determined by inspection — isolated
+stones on star points, where the liberty, ladder and pass-alive planes are all provably zero.
+
+On those, against the engine with symmetry randomization off:
+
+| net | policy KL median | \|Δwinrate\| mean | \|ΔscoreLead\| mean | scoreLead corr |
+|---|---|---|---|---|
+| `b10c384h6nbttflrs` (v15) | **0.00025** | **0.00042** | 0.061 | 0.99975 |
+| `g170e-b10c128` (v8) | 0.00014 | 0.0022 | 1.81 | 0.9941 |
+| `g170-b6c96` (v8) | 0.0022 | 0.011 | 0.46 | 0.9973 |
+
+The target net matches to ~1e-4 on policy and winrate. The old v8 nets match on policy and value
+but their `scoreLead` drifts by 0.5–2 points; their misc-value head is only four channels wide and
+the engine post-processes it differently. Not chased — v8 is not the target, and the diagnostics
+below compare our forward against *itself*.
+
+## [1] The trunk residual stream is strongly low-rank
+
+96 real positions, trunk residual stream at the tip, c384:
+
+| basis | participation ratio | dims for 90% / 99% of variance |
+|---|---|---|
+| **PCA** (rotation-invariant) | 10.4 of 384 (3%) | 61 / 239 |
+
+This is the most interesting number in the entry and also the easiest to over-read. A
+participation ratio of 10 says the stream's variance is concentrated in a handful of directions --
+genuine, large redundancy. But **channel pruning can only delete axis-aligned coordinates**, and a
+PCA basis is not the channel basis. Whether the redundancy is *reachable* by pruning therefore
+depends on a different measurement: how concentrated the variance is per channel.
+
+`calibrate.axis_aligned_concentration` computes exactly that and the run is in flight; the number
+goes here. The prediction from [4] below is that the channel basis will look much flatter than the
+PCA basis, which would mean the redundancy is real but only exploitable by a **low-rank projection
+of the trunk** -- something format v17 cannot express. If so, the most promising compression lever
+found on this branch is the one that needs a KataGo C++ change, not the ones that do not.
+
+## [2] No block is coasting — the LLM depth-drop premise does not hold here
+
+Per-block cosine between the residual-stream input and output, and the relative size of the
+residual each block writes:
+
+| block | cos(in, out) | ‖res‖ / ‖in‖ |
+|---|---|---|
+| `blocks.3` (quietest) | 0.9805 | 0.235 |
+| `blocks.4` | 0.9773 | 0.258 |
+| `blocks.5` | 0.9712 | 0.263 |
+| ... | | |
+| `blocks.0.blockstack.1` (loudest) | 0.3427 | 3.437 |
+
+In the LLM depth-pruning literature a droppable layer has cos > 0.99 and writes a residual a few
+percent the size of the stream. **The quietest block here writes a residual 23% the size of the
+stream.** There is no coasting block to delete — which is exactly what phase 1's −5.1 scoreLead
+for one dropped block was telling us, now explained rather than just measured.
+
+The inner sub-blocks are the opposite: the first attention block inside an `nbt` block writes a
+residual **3.4×** the size of its input, i.e. it essentially rewrites the bottleneck
+representation. The `nbt` bottleneck is not a lightly-perturbed residual stream at all.
+
+## [3] There are no dead heads, and the weight-only criterion was measuring the wrong thing
+
+- Within a block, the ratio of most- to least-important head (activation-weighted) has **median
+  1.76**, worst 7.81. The NLP head-pruning results that motivate this lever report spreads of 10×
+  and up. Six heads that exactly tile a 192-dim bottleneck are all doing work.
+- Only **7.6%** of SwiGLU hidden units fall below 10% of their block's median importance.
+- **Rank correlation between the activation-aware and weight-only head rankings: +0.26.** The two
+  criteria mostly disagree, so phase 1 was ranking heads close to arbitrarily.
+
+## [4] Attention projections are substantially low-rank; the FFN is not
+
+Rank needed for 99% of the spectral energy, one representative trunk block:
+
+| matrix | shape | r90 | r99 | r99 / full |
+|---|---|---|---|---|
+| `k_proj` | (192, 192) | 33 | 76 | **0.40** |
+| `q_proj` | (192, 192) | 44 | 96 | 0.50 |
+| `v_proj` | (192, 192) | 58 | 122 | 0.64 |
+| `out_proj` | (192, 192) | 78 | 131 | 0.68 |
+| `linear1` | (192, 512) | 117 | 170 | 0.89 |
+| `linear_gate` | (192, 512) | 119 | 171 | 0.89 |
+| `linear2` | (512, 192) | 137 | 180 | **0.94** |
+
+Consistent with [1]: the compressible structure is in the attention projections and is *low-rank*,
+not *low-width*. Spectral energy is a weak proxy for functional equivalence, so this is a
+plausibility check, not a promise — but it points the same direction as the trunk PCA.
+
+## [5] Activation-aware selection roughly halves the damage -- and still is not enough
+
+Both criteria pruned to identical FLOPs, damage measured against the unpruned parent on 96
+**held-out** positions (calibration used a disjoint 96):
+
+| variant | ΔFLOP | policy top-1 | KL | \|Δ lead\| | \|Δ winrate\| |
+|---|---|---|---|---|---|
+| FFN keep 0.75, weight-only | −11.1% | 0.59 | 0.371 | 1.96 | 0.123 |
+| FFN keep 0.75, **activation-aware** | −11.1% | **0.71** | **0.241** | **1.25** | **0.076** |
+| FFN keep 0.50, weight-only | −22.3% | 0.32 | 1.410 | 6.12 | 0.230 |
+| FFN keep 0.50, **activation-aware** | −22.3% | **0.40** | **0.826** | **3.01** | **0.195** |
+| heads keep 0.75, weight-only | −14.4% | 0.20 | 2.034 | 17.60 | 0.271 |
+| heads keep 0.75, **activation-aware** | −14.4% | 0.28 | 1.817 | 12.18 | 0.317 |
+
+(the keep-0.50 head rows are still running; they go here)
+
+Reading it:
+
+1. **The weight-only floor was a real floor.** Activation-aware selection cuts lead damage by 36%
+   at keep 0.75 and 51% at keep 0.50, at identical FLOPs. Phase 1's numbers understated what
+   pruning can do -- which is the honest correction to make.
+2. **It is still not enough.** The best available criterion loses **1.25 points of scoreLead for
+   11% of the FLOPs**. For scale, the whole train-up study fought over margins of 5--15 points, so
+   this is not a rounding error.
+3. **Heads remain hopeless**, as [3] predicted: 12.2 points of lead for 14% of the FLOPs even with
+   the better criterion. Do not prune heads in these nets.
+4. Damage is superlinear in the amount removed (1.25 -> 3.01 for 11% -> 22%), so there is no
+   "prune a little everywhere" budget that stays cheap.
+
+**Caveats.** 96 held-out positions, damage measured against the parent net in our torch forward
+rather than in games -- this ranks criteria, it does not measure Elo. No healing, which remains the
+constraint the original question imposed and, on this evidence, the constraint that decides it.

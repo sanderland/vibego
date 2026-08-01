@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from vibego.katago.binmodel import NestedBottleneckBlock, read_model  # noqa: E402
 from vibego.katago.calibrate import (  # noqa: E402
+    axis_aligned_concentration,
     effective_rank,
     load_calibration,
     run_calibration,
@@ -136,6 +137,14 @@ def main() -> None:
           f"   ({100 * er['participation_ratio'] / er['dims']:.0f}% of full width)")
     print(f"  dims for 90 / 99 / 99.9% of variance   "
           f"{er['dims_for_90pct']} / {er['dims_for_99pct']} / {er['dims_for_999pct']}")
+    ax = axis_aligned_concentration(cal.trunk_channel_variance)
+    print(f"  in the CHANNEL basis (the only one pruning can use):")
+    print(f"    participation ratio    {ax['participation_ratio']:.1f}"
+          f"   ({100 * ax['participation_ratio'] / ax['channels']:.0f}% of full width)")
+    print(f"    channels for 90 / 99% of variance   "
+          f"{ax['channels_for_90pct']} / {ax['channels_for_99pct']}")
+    print(f"    channels under 1% of the busiest    "
+          f"{100 * ax['frac_below_1pct_of_max']:.1f}%")
 
     # 2 -------------------------------------------------------------------------------
     print("\n[2] per-block residual-stream rotation (1.000 = block changes nothing)")

@@ -51,6 +51,7 @@ class Calibration:
     block_angles: dict = field(default_factory=dict)      # block name -> mean cosine(in, in+res)
     block_relative_norm: dict = field(default_factory=dict)  # block name -> ||res|| / ||in||
     trunk_singular_values: np.ndarray | None = None
+    trunk_channel_variance: np.ndarray | None = None
     policy: np.ndarray | None = None                      # parent policy, for damage measurement
     score_lead: np.ndarray | None = None
     winrate: np.ndarray | None = None
@@ -123,6 +124,10 @@ def run_calibration(net: KataTorchModel, spatial: torch.Tensor, glob: torch.Tens
     trunk_matrix = np.concatenate(trunk_rows)
     centered = trunk_matrix - trunk_matrix.mean(axis=0, keepdims=True)
     cal.trunk_singular_values = np.linalg.svd(centered, compute_uv=False)
+    # Per-*channel* variance is a different question from the PCA spectrum: channel pruning can
+    # only delete axis-aligned coordinates, so a stream that is low-rank in some rotated basis is
+    # not necessarily narrowable in the basis the weights actually live in.
+    cal.trunk_channel_variance = centered.var(axis=0)
     cal.policy = np.concatenate(policies)
     cal.score_lead = np.concatenate(leads)
     cal.winrate = np.concatenate(winrates)
@@ -134,6 +139,22 @@ def _attention_by_name(net: KataTorchModel, name: str):
         if getattr(module, "name", None) == name:
             return module
     raise KeyError(name)
+
+
+def axis_aligned_concentration(channel_variance: np.ndarray) -> dict:
+    """How concentrated the residual stream is in the *channel* basis -- the only basis that
+    channel pruning can exploit. Compare with `effective_rank`, which is rotation-invariant: a
+    big gap between them means the redundancy is real but not reachable without a change of
+    basis (i.e. a low-rank factorization, which the model file format cannot express)."""
+    var = np.sort(channel_variance.astype(np.float64))[::-1]
+    cum = np.cumsum(var) / var.sum()
+    return {
+        "channels": int(len(var)),
+        "participation_ratio": float(var.sum() ** 2 / (var ** 2).sum()),
+        "channels_for_90pct": int(np.searchsorted(cum, 0.90) + 1),
+        "channels_for_99pct": int(np.searchsorted(cum, 0.99) + 1),
+        "frac_below_1pct_of_max": float(np.mean(var < 0.01 * var.max())),
+    }
 
 
 def effective_rank(singular_values: np.ndarray) -> dict:
