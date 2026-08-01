@@ -17,6 +17,11 @@ Levers (combinable in one pass; applied in the order listed):
     --drop-inner-pairs 4:1   remove 1 attention+FFN pair from nbt block 4
     --heads-keep 0.67        keep the top 2/3 of attention heads   (per block, uncoupled)
     --ffn-keep 0.75          keep the top 3/4 of FFN hidden units  (finest-grained)
+    --v-dim-keep 0.5         halve v_head_dim by low-rank factorization of the value path
+    --q-dim-keep 0.5         keep half the RoPE frequency pairs, halving q_head_dim
+
+Pass --calibrate with a training-data `.npz` to select on measured activations rather than weight
+magnitudes; the low-rank levers in particular are much better with it.
 
 Which units to drop is chosen by a weight-only magnitude proxy (see `vibego/katago/prune.py`);
 that is the floor of what pruning can do, not the ceiling. `--dry-run` reports the cost delta
@@ -37,6 +42,8 @@ from vibego.katago.prune import (  # noqa: E402
     PruneError,
     drop_blocks,
     drop_inner_pairs,
+    drop_rope_pairs_everywhere,
+    low_rank_value_everywhere,
     narrow_ffn_everywhere,
     prune_heads_everywhere,
     sanitize_name,
@@ -60,6 +67,14 @@ def main() -> None:
                     help="fraction of attention heads to keep in every attention block")
     ap.add_argument("--ffn-keep", type=float,
                     help="fraction of FFN hidden units to keep in every FFN block")
+    ap.add_argument("--v-dim-keep", type=float,
+                    help="fraction of v_head_dim to keep (low-rank value path, in-format)")
+    ap.add_argument("--q-dim-keep", type=float,
+                    help="fraction of RoPE frequency pairs to keep (shrinks q_head_dim)")
+    ap.add_argument("--calibrate", metavar="NPZ",
+                    help="training-data shard to calibrate on. Without it, selection falls back "
+                         "to data-blind weight magnitudes, which measurably costs quality.")
+    ap.add_argument("--calibrate-n", type=int, default=64, help="calibration positions")
     ap.add_argument("--name-suffix", help="suffix for the model name recorded in the file "
                                           "(default: derived from the pruning options)")
     ap.add_argument("--board", type=int, default=19, help="board size for the FLOPs report")
@@ -68,15 +83,30 @@ def main() -> None:
 
     if not args.dry_run and not args.out:
         ap.error("--out is required unless --dry-run")
-    if not (args.drop_blocks or args.drop_inner_pairs or args.heads_keep or args.ffn_keep):
+    levers = (args.drop_blocks, args.drop_inner_pairs, args.heads_keep, args.ffn_keep,
+              args.v_dim_keep, args.q_dim_keep)
+    if not any(levers):
         ap.error("nothing to do: pass at least one of --drop-blocks/--drop-inner-pairs/"
-                 "--heads-keep/--ffn-keep")
+                 "--heads-keep/--ffn-keep/--v-dim-keep/--q-dim-keep")
 
     model = read_model(args.model)
     before = model_cost(model, board=args.board)
     print(f"in:  {arch_summary(model)}")
     print(f"     {before.total.params:,} params, {before.total.flops / 1e6:,.1f} MFLOP/eval "
           f"@{args.board}x{args.board}")
+
+    act_ffn = act_heads = moments = None
+    if args.calibrate:
+        from vibego.katago.calibrate import (load_calibration, run_calibration,
+                                             weighted_ffn_importance, weighted_head_importance)
+        from vibego.katago.torchmodel import KataTorchModel
+        print(f"\ncalibrating on {args.calibrate_n} positions from "
+              f"{os.path.basename(args.calibrate)} ...")
+        sp, gl = load_calibration(args.calibrate, args.calibrate_n)
+        cal = run_calibration(KataTorchModel(model).eval(), sp, gl)
+        act_ffn = weighted_ffn_importance(model, cal)
+        act_heads = weighted_head_importance(model, cal)
+        moments = cal.input_moment
 
     records = []
     try:
@@ -86,10 +116,14 @@ def main() -> None:
             records.append(drop_inner_pairs(model, int(block_str), int(count_str or 1)))
         if args.drop_blocks:
             records.append(drop_blocks(model, args.drop_blocks))
+        if args.q_dim_keep:
+            records += drop_rope_pairs_everywhere(model, args.q_dim_keep, moments)
+        if args.v_dim_keep:
+            records += low_rank_value_everywhere(model, args.v_dim_keep, moments)
         if args.heads_keep:
-            records += prune_heads_everywhere(model, args.heads_keep)
+            records += prune_heads_everywhere(model, args.heads_keep, act_heads)
         if args.ffn_keep:
-            records += narrow_ffn_everywhere(model, args.ffn_keep)
+            records += narrow_ffn_everywhere(model, args.ffn_keep, act_ffn)
     except PruneError as e:
         sys.exit(f"error: {e}")
 
@@ -129,6 +163,10 @@ def _default_suffix(args) -> str:
         bits.append(f"h{int(round(args.heads_keep * 100))}")
     if args.ffn_keep:
         bits.append(f"ffn{int(round(args.ffn_keep * 100))}")
+    if args.v_dim_keep:
+        bits.append(f"v{int(round(args.v_dim_keep * 100))}")
+    if args.q_dim_keep:
+        bits.append(f"q{int(round(args.q_dim_keep * 100))}")
     return "-".join(bits) or "pruned"
 
 
