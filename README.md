@@ -76,6 +76,7 @@ A small selection also lives in [`released/`](released/) in this repo.
 | `vibego/engine/analysis.py` | KataGo-compatible JSON analysis protocol (streaming, concurrent queries) |
 | `vibego/engine/proxy.py` | Run our MCTS on an **external** KataGo net — isolates search quality from net quality |
 | `vibego/eval/` | `selfplay.py` (+ Tromp-Taylor scoring), `elo.py` (Bayesian Elo w/ credible intervals), `arena.py` (round-robin) |
+| `vibego/katago/` | Open a **released** KataGo `.bin.gz` directly (format v8–17, incl. the v1.17 transformers): parse → edit → write back byte-exactly, params/FLOPs per block, and in-format structural pruning that the stock engine still loads |
 
 ### Experiment tooling (`scripts/`)
 
@@ -90,6 +91,10 @@ A small selection also lives in [`released/`](released/) in this repo.
 | `move_eval.py` | Low-noise per-move "points conceded vs a reference" |
 | `trace_search.py` | Deterministic batch-1 node-by-node search trace for harness validation/debugging |
 | `bench_net.py` | Wall-clock inference speed (nnevals/s) per arch — compare nets **speed-matched**, not just size-matched |
+| `kata_inspect.py` | What's actually inside a released KataGo net — arch, params, FLOPs/eval, per-block breakdown (no engine, no torch) |
+| `kata_prune.py` | Edit a released net into a `.bin.gz` the stock engine still loads: structural pruning (blocks / heads / FFN width / low-rank attention), or `--flush-subnormal` — which is numerically inert but makes the v1.17 transformer nets **5–14× faster on CPU** (see the [2026-08-01 notebook entry](experiments/2026-08-01-katago-net-compression.md)) |
+| `kata_diagnose.py` | Activation diagnostics on a released net: residual-stream effective rank, per-block rotation, head/FFN importance, and pruning-criterion head-to-heads |
+| `kata_torch_check.py` | Validate the torch forward for a parsed `.bin.gz` against the stock engine |
 | `setup_katago.sh` / `download_data.py` | Fetch KataGo teacher/judge nets and training data |
 
 `experiments/` is the **lab notebook**: one dated markdown per experiment (question → setup →

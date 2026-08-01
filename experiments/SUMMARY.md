@@ -63,6 +63,47 @@ dated files for full detail.
 - **Our ~1M-param net matches b18 at least as well as b6c96 does** on policy/winrate/score/
   ownership (biased — we distilled from b18) → capacity is not the wall; data/steps/targets are.
 
+- **The v1.17 KataGo transformer nets carry 4.2-27% SUBNORMAL weights, and that is the whole CPU
+  story** (2026-08-01 phase 4). x86 runs subnormal operands in microcode at ~100x the cost, and
+  KataGo sets flush-to-zero nowhere in `cpp/`. Zeroing them is numerically inert and lives in the
+  weight file, so on the **unmodified** engine at batch 1: `b10c384h6nbttflrs` **5.4x faster**,
+  `b10c512h8nbt3tflrs` **13.7x faster**, outputs **bit-identical**. Every conv net we have
+  (b18c384nbt, g170-b6c96, g170e-b10c128) has exactly 0.0000% - this arrived with the transformer
+  recipe. `scripts/kata_prune.py --flush-subnormal`. **Check our own nets before trusting any
+  CPU-ms number.**
+- **A benchmark result that cannot be right is a finding, not noise.** An 11% FLOP cut appearing to
+  buy 3.7x wall-clock is what led to the above. Ruled out in order: power-of-two stride (512->511
+  moves it 6%, not 4x), matmul shape (a bare GEMM scales linearly in the width), batching (per-eval
+  cost flat from batch 1 to 8).
+- **Whiten the SVD.** Data-aware low-rank (minimize ||C^(1/2)(M - M')||_F with C = E[x x^T] at the
+  layer input, not ||M - M'||_F) beat plain SVD by **7x** in damage at equal FLOPs. Far bigger than
+  the 1.4-2.8x that activation-awareness bought for magnitude pruning.
+- **Activation-aware selection halves pruning damage; it still does not make post-hoc pruning pay**
+  (2026-08-01 phase 2). At equal FLOPs, activation-weighted FFN selection cuts |Δ scoreLead| from
+  1.96 → 1.25 at −11% FLOPs and 6.12 → 3.01 at −22%, vs the weight-only criterion — so weight-norm
+  screening is a real floor, not the answer. But 1.25 points for 11% of the FLOPs is still far too
+  expensive. Mechanism: the quietest trunk block writes a residual **23%** the size of the stream
+  (LLM depth-drop wants a few %), head importance spread is **1.76×** median (no dead heads), and
+  **no trunk channel is idle** (287 of 384 needed for 90% of variance).
+- **Take per-channel statistics BEFORE the norm.** Measuring the trunk residual stream after the
+  tip RMSNorm + SiLU claimed 51% of channels were idle; pre-norm the figure is 0%. The norm's
+  per-channel gamma and SiLU's squashing of negatives were being reported as properties of the
+  stream. Applies to any diagnostic on a normed architecture, ours included.
+- **The v1.17 KataGo transformer nets are dense — post-hoc compression without healing does not
+  pay** (2026-08-01). `b10c384h6nbttflrs`: heads exactly tile the bottleneck (6×32=192), SwiGLU is
+  at the standard 8/3 ratio, all 10 blocks cost the same FLOPs. Cheapest structural edit (−4.4%
+  FLOPs) already costs 0.58 scoreLead; heads are the worst lever (−7.2% FLOPs → −7.2 sL), FFN
+  width the best (−11% → −1.8 sL). Quantization is dropped for a deployment reason, not an
+  accuracy one: **no KataGo backend has int8 kernels**, so there is no speedup to weigh the loss
+  against.
+- **Policy agreement / KL is a bad screen for compression damage** — a block-drop scored top-1
+  0.90 and the *lowest* KL of six variants while losing 5.1 scoreLead. Quantization/pruning error
+  is a deterministic function of the position, i.e. bias, and search does not average bias away.
+  Screen on value/score, not on policy.
+- **`b10c384h6nbttflrs` is a better teacher than our pinned `kata1-b18c384nbt`** — stronger per
+  visit at 10.6M params / 9.56 GFLOP vs 26.4M / 18.9 GFLOP. Same relabel throughput, better
+  targets. Costs an engine bump to v1.17.x and a re-baseline.
+
 ## Search: things that worked vs didn't (all KataGo-faithful, re-validated post-bug-fix)
 
 - **Kept** (correct & helpful): score in the PUCT utility (atan static+dynamic), FPU base =
@@ -114,3 +155,8 @@ dated files for full detail.
 - `scripts/policy_eval.py` — raw net agreement (policy/winrate/score/ownership) vs a reference.
   Use the **neutral** zhizi/b40 as `--ref` (not b18, our teacher). NB: raw agreement ≠ game strength.
 - `vibego/engine/proxy.py` — run our MCTS on an external KataGo net (search-isolation test).
+- `vibego/katago/` + `scripts/kata_inspect.py` / `kata_prune.py` — open a released KataGo
+  `.bin.gz` directly (v8–17, incl. the v1.17 transformers), report params/FLOPs per block, and
+  structurally prune it back into a file the **stock engine loads** — so pruned nets go straight
+  into `policy_eval` / `match` / `arena` with no new inference code. Byte-exact round-trip is the
+  contract, verified on 9 real nets.

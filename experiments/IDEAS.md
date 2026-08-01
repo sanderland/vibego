@@ -259,6 +259,20 @@ Ranked within each bucket; everything here is **speculative until A/B'd** per th
   fp16); no hard size cap, and in-browser runtimes don't reliably accelerate int8 (WebGPU is
   fp16-centric; wasm int8 quantize/dequantize overhead erases the gain on small conv nets). fp16 is
   the default; the size lever we keep is weight-tying (ROADMAP #5b).
+- **Quantization of *released KataGo* nets (the v1.17 transformers), as a speed lever.** Separate
+  question from the wasm one above, same answer by a different route: KataGo's CUDA/Metal/OpenCL
+  backends have no int8 kernels, so a quantized `.bin.gz` loads as floats and runs at *identical*
+  speed -- accuracy loss with no speed win to weigh it against. The int8 win lives in TensorRT
+  tensor cores and needs calibration inside KataGo's C++ backend (a KataGo PR, not a vibego
+  experiment); a prior attempt is [KataGo#799](https://github.com/lightvector/KataGo/issues/799)
+  ("winrates a lot different from fp16", no methodology, no follow-up). See
+  [2026-08-01-katago-net-compression](2026-08-01-katago-net-compression.md).
+- **Weight-only structural pruning of the v1.17 transformer nets, without healing.** Measured:
+  heads exactly tile the bottleneck (6x32 = 192 = c_mid), the SwiGLU FFN is at the standard 8/3
+  ratio, and all 10 trunk blocks cost identical FLOPs -- the nets are dense by construction. The
+  cheapest available edit (-4.4% FLOPs) already costs 0.58 scoreLead; heads are the worst lever,
+  FFN width the best. Not dead, but only worth revisiting with **activation-aware selection plus a
+  distill heal** -- which is a different experiment (compress-down vs train-up), not this one.
 - **Graph search / transposition sharing**, and **`subtreeValueBias`.** Measured only **0.9%
   transpositions** in a 48-visit tree → not worth the complexity / a no-op at our tree sizes.
 - **`valueWeightExponent` + recursive value recompute.** Only masked the perspective bug; *hurts* on
