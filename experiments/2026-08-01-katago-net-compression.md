@@ -233,25 +233,38 @@ but their `scoreLead` drifts by 0.5–2 points; their misc-value head is only fo
 the engine post-processes it differently. Not chased — v8 is not the target, and the diagnostics
 below compare our forward against *itself*.
 
-## [1] The trunk residual stream is strongly low-rank
+## [1] The trunk is correlated but not narrowable -- and a measurement artifact nearly said otherwise
 
-96 real positions, trunk residual stream at the tip, c384:
+Residual stream at the trunk tip, c384, 48 real positions. Two summaries, because they answer
+different questions: the **PCA** spectrum is rotation-invariant and says whether a low-rank
+*projection* would do, while the **channel** basis is the only one that channel pruning can act on.
 
-| basis | participation ratio | dims for 90% / 99% of variance |
-|---|---|---|
-| **PCA** (rotation-invariant) | 10.4 of 384 (3%) | 61 / 239 |
+| basis | participation ratio | dims for 90% / 99% of variance | dims under 1% of the busiest |
+|---|---|---|---|
+| PCA (rotation-invariant) | 17.9 of 384 (4.7%) | 112 / 299 | — |
+| **channel** (what pruning sees) | **176.7 of 384 (46%)** | **287 / 371** | **0%** |
 
-This is the most interesting number in the entry and also the easiest to over-read. A
-participation ratio of 10 says the stream's variance is concentrated in a handful of directions --
-genuine, large redundancy. But **channel pruning can only delete axis-aligned coordinates**, and a
-PCA basis is not the channel basis. Whether the redundancy is *reachable* by pruning therefore
-depends on a different measurement: how concentrated the variance is per channel.
+**Read the second row first: trunk width pruning is dead.** No channel is idle -- not one of the
+384 carries under 1% of the busiest channel's variance -- and you need 287 of them for even 90% of
+the variance. There is nothing to delete.
 
-`calibrate.axis_aligned_concentration` computes exactly that and the run is in flight; the number
-goes here. The prediction from [4] below is that the channel basis will look much flatter than the
-PCA basis, which would mean the redundancy is real but only exploitable by a **low-rank projection
-of the trunk** -- something format v17 cannot express. If so, the most promising compression lever
-found on this branch is the one that needs a KataGo C++ change, not the ones that do not.
+The PCA row says the stream's channels are strongly *correlated* (participation ratio 17.9 against
+the channel basis's 176.7), so a few rotated directions dominate. But the tail is heavy: 99% of
+variance still needs 299 of 384 principal dimensions. That is real structure, not a dramatic one.
+
+**The measurement artifact is worth recording,** because the first version of this table was much
+more exciting and wrong. Capturing the stream *after* the trunk-tip RMSNorm and SiLU gave a channel
+participation ratio of 40 and claimed **51% of channels sat under 1% of the busiest**. Both were
+artifacts: the tip norm's per-channel `gamma` rescales the stream, and SiLU squashes negatives, so
+post-norm per-channel variance describes the norm's parameters as much as the stream's use of its
+channels. Reading the pre-norm tensor moves "half the trunk is idle" to "none of it is". Any
+per-channel statistic in a normed architecture has to be taken before the norm.
+
+**And even a narrowable trunk would barely pay.** Only **12.3%** of this net's FLOPs depend on
+trunk width at all: per nbt block the two 1×1 bottleneck convs are 106.5 of 945.4 MFLOP, plus the
+54.9 MFLOP stem and 53.4 in the heads. So c384 → c310 would buy ~2.4% of total FLOPs and c384 →
+c256 ~4.0%. The `nbt` design deliberately puts the compute in the bottleneck, which means trunk
+redundancy -- had there been any -- would have been worth almost nothing on our axis.
 
 ## [2] No block is coasting — the LLM depth-drop premise does not hold here
 
@@ -302,7 +315,7 @@ Consistent with [1]: the compressible structure is in the attention projections 
 not *low-width*. Spectral energy is a weak proxy for functional equivalence, so this is a
 plausibility check, not a promise — but it points the same direction as the trunk PCA.
 
-## [5] Activation-aware selection roughly halves the damage -- and still is not enough
+## [5] Activation-aware selection roughly halves FFN damage -- and still is not enough
 
 Both criteria pruned to identical FLOPs, damage measured against the unpruned parent on 96
 **held-out** positions (calibration used a disjoint 96):
@@ -314,23 +327,76 @@ Both criteria pruned to identical FLOPs, damage measured against the unpruned pa
 | FFN keep 0.50, weight-only | −22.3% | 0.32 | 1.410 | 6.12 | 0.230 |
 | FFN keep 0.50, **activation-aware** | −22.3% | **0.40** | **0.826** | **3.01** | **0.195** |
 | heads keep 0.75, weight-only | −14.4% | 0.20 | 2.034 | 17.60 | 0.271 |
-| heads keep 0.75, **activation-aware** | −14.4% | 0.28 | 1.817 | 12.18 | 0.317 |
-
-(the keep-0.50 head rows are still running; they go here)
+| heads keep 0.75, activation-aware | −14.4% | 0.28 | 1.817 | 12.18 | 0.317 |
+| heads keep 0.50, weight-only | −21.6% | 0.22 | 2.211 | 14.70 | 0.259 |
+| heads keep 0.50, activation-aware | −21.6% | 0.12 | 2.343 | 12.20 | 0.272 |
 
 Reading it:
 
-1. **The weight-only floor was a real floor.** Activation-aware selection cuts lead damage by 36%
-   at keep 0.75 and 51% at keep 0.50, at identical FLOPs. Phase 1's numbers understated what
-   pruning can do -- which is the honest correction to make.
-2. **It is still not enough.** The best available criterion loses **1.25 points of scoreLead for
-   11% of the FLOPs**. For scale, the whole train-up study fought over margins of 5--15 points, so
-   this is not a rounding error.
-3. **Heads remain hopeless**, as [3] predicted: 12.2 points of lead for 14% of the FLOPs even with
-   the better criterion. Do not prune heads in these nets.
-4. Damage is superlinear in the amount removed (1.25 -> 3.01 for 11% -> 22%), so there is no
-   "prune a little everywhere" budget that stays cheap.
+1. **The weight-only floor was a real floor, for FFN width.** Activation-aware selection cuts lead
+   damage by **36%** at keep 0.75 and **51%** at keep 0.50, at identical FLOPs. Phase 1 understated
+   what pruning can do; that is the honest correction to make to it.
+2. **It is still not enough.** The best criterion available loses **1.25 points of scoreLead for
+   11% of the FLOPs**. For scale, the train-up study fought over margins of 5--15 points, so this
+   is not a rounding error.
+3. **For heads the criterion barely matters, because the net is already broken.** At keep 0.50 the
+   activation-aware variant is *worse* on KL (2.34 vs 2.21) and top-1 (0.12 vs 0.22). Damage is
+   also non-monotone in the amount removed (17.6 points at −14.4%, 14.7 at −21.6%): once six heads
+   that exactly tile the bottleneck become three, the outputs are no longer a perturbation of the
+   parent's and the deltas stop tracking anything. **Do not prune heads in these nets**, and do
+   not read fine distinctions off a destroyed net.
+4. FFN damage is superlinear in the amount removed (1.25 → 3.01 for 11% → 22%), so there is no
+   "shave a little everywhere" budget that stays cheap.
 
-**Caveats.** 96 held-out positions, damage measured against the parent net in our torch forward
-rather than in games -- this ranks criteria, it does not measure Elo. No healing, which remains the
+**Caveats.** 96 held-out positions; damage is measured against the parent net in our torch forward,
+not in games -- this ranks criteria, it does not measure Elo. No healing, which remains the
 constraint the original question imposed and, on this evidence, the constraint that decides it.
+
+## Phase-2 conclusion
+
+The phase-1 verdict survives contact with better tools, and now has a mechanism rather than just a
+number attached:
+
+- **These nets are dense where it counts.** No coasting block (quietest writes a 23% residual), no
+  dead heads (median importance spread 1.76×), 92% of FFN units carrying real signal. The
+  structural facts read off the file in phase 1 -- heads exactly tiling the bottleneck, SwiGLU at
+  the standard 8/3 ratio, all blocks costing the same -- are borne out by the activations.
+- **Better selection helps but does not rescue it.** Halving the damage still leaves 1.25 points of
+  scoreLead for 11% of the FLOPs. Post-hoc structural pruning without healing is not a route to a
+  better point on the FLOPs↔Elo frontier for these nets.
+- **The redundancy that does exist is in the wrong basis and in the wrong place.** No trunk channel
+  is idle, so channel pruning has nothing to take; the trunk's channels are correlated, and the
+  attention projections need only 40--68% of their rank for 99% of spectral energy, but exploiting
+  either needs a low-rank *factorization*, which format v17 cannot express. And trunk width is only
+  12.3% of this net's FLOPs anyway -- the `nbt` design puts the compute in the bottleneck -- so even
+  a freely narrowable trunk would have been worth ~2--4%.
+
+### What would actually be worth doing next, in order
+
+1. **Take the teacher upgrade.** Still the highest value/effort item on this branch and unrelated
+   to compression: `b10c384h6nbttflrs` at 10.6M params / 9.56 GFLOP versus the pinned
+   `kata1-b18c384nbt` at 26.4M / 18.9 GFLOP, reported stronger per visit. Same relabel throughput,
+   better targets. Costs an engine bump to v1.17.x and a re-baseline.
+2. **Prune-down + distill heal, as the third arm of compress-down vs train-up.** Everything above
+   is arm B (no heal) and it loses. Arm C is cheap here given `relabel.py` and the 44M-position
+   set, and it is the arm the LLM literature says wins. Start from the activation-aware FFN-pruned
+   net, since that is the best-behaved lever.
+3. **Steal the architecture rather than the weights.** Learnable non-axis-aligned RoPE and the
+   `nbttflrs` block shape are now readable from the file and implementable in our registry
+   (ROADMAP #6/Tier-4). The transferable question is whether the transformer edge survives at
+   1--4M params speed-matched on CPU, where the discord numbers say it mostly does not.
+4. Low-rank factorization of the attention projections is the only in-net lever with headroom, and
+   it needs a new layer type in KataGo's C++ -- a KataGo PR, not a vibego experiment.
+
+## Repro (phase 2)
+
+```bash
+# validate the torch forward against the engine (note: symmetry randomization must be off)
+uv run python scripts/kata_torch_check.py --synthetic \
+    --model models/b10c384h6nbttflrs.bin.gz \
+    --katago ./katago --config katago/cpp/configs/analysis_example.cfg
+
+# diagnostics + criterion head-to-head
+uv run python scripts/kata_diagnose.py --model models/b10c384h6nbttflrs.bin.gz \
+    --npz katago/python/testdata/benchmark_data_1024.npz --n 96 --eval-n 96 --keep 0.75 0.5
+```

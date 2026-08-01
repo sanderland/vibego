@@ -63,6 +63,17 @@ dated files for full detail.
 - **Our ~1M-param net matches b18 at least as well as b6c96 does** on policy/winrate/score/
   ownership (biased — we distilled from b18) → capacity is not the wall; data/steps/targets are.
 
+- **Activation-aware selection halves pruning damage; it still does not make post-hoc pruning pay**
+  (2026-08-01 phase 2). At equal FLOPs, activation-weighted FFN selection cuts |Δ scoreLead| from
+  1.96 → 1.25 at −11% FLOPs and 6.12 → 3.01 at −22%, vs the weight-only criterion — so weight-norm
+  screening is a real floor, not the answer. But 1.25 points for 11% of the FLOPs is still far too
+  expensive. Mechanism: the quietest trunk block writes a residual **23%** the size of the stream
+  (LLM depth-drop wants a few %), head importance spread is **1.76×** median (no dead heads), and
+  **no trunk channel is idle** (287 of 384 needed for 90% of variance).
+- **Take per-channel statistics BEFORE the norm.** Measuring the trunk residual stream after the
+  tip RMSNorm + SiLU claimed 51% of channels were idle; pre-norm the figure is 0%. The norm's
+  per-channel gamma and SiLU's squashing of negatives were being reported as properties of the
+  stream. Applies to any diagnostic on a normed architecture, ours included.
 - **The v1.17 KataGo transformer nets are dense — post-hoc compression without healing does not
   pay** (2026-08-01). `b10c384h6nbttflrs`: heads exactly tile the bottleneck (6×32=192), SwiGLU is
   at the standard 8/3 ratio, all 10 blocks cost the same FLOPs. Cheapest structural edit (−4.4%
