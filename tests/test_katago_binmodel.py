@@ -138,7 +138,8 @@ def make_model(version: int = 17, c: int = 8, c_mid: int = 4) -> KataModel:
         _act("v.act1"), _matmul("v.linear2", 12, 8), MatBias("v.bias2", 8, _rand(8)), _act("v.act2"),
         _matmul("v.linear_valuehead", 8, 3), MatBias("v.bias_valuehead", 3, _rand(3)),
         _matmul("v.linear_miscvaluehead", 8, 6), MatBias("v.bias_miscvaluehead", 6, _rand(6)),
-        _conv("v.conv_ownership", 1, 1, c, 1),
+        # ownership is predicted from the value head's own v1 features, not from the trunk
+        _conv("v.conv_ownership", 1, 1, 4, 1),
     )
     return KataModel("test-net", version, 22, 19,
                      post_process=["20.0", "20.0", "20.0", "20.0", "40.0", "0.25", "30.0"],

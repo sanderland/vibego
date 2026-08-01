@@ -121,7 +121,8 @@ def head_importance(block: TransformerAttentionBlock) -> np.ndarray:
     return np.linalg.norm(v, axis=(0, 2)) * np.linalg.norm(o, axis=(1, 2))
 
 
-def prune_heads(block: TransformerAttentionBlock, keep_heads: int) -> PruneRecord:
+def prune_heads(block: TransformerAttentionBlock, keep_heads: int,
+                importance: np.ndarray | None = None) -> PruneRecord:
     """Keep the `keep_heads` highest-importance attention heads, dropping the rest exactly.
 
     Heads are concatenated along the projection outputs and never mix until `out_proj`, so
@@ -139,7 +140,8 @@ def prune_heads(block: TransformerAttentionBlock, keep_heads: int) -> PruneRecor
     if not 0 < keep_heads < h:
         raise PruneError(f"{block.name}: keep_heads must be in 1..{h - 1}, got {keep_heads}")
 
-    order = np.argsort(head_importance(block))[::-1][:keep_heads]
+    scores = head_importance(block) if importance is None else np.asarray(importance)
+    order = np.argsort(scores)[::-1][:keep_heads]
     keep = np.sort(order)
     qd, vd = block.q_head_dim, block.v_head_dim
 
@@ -176,7 +178,8 @@ def ffn_importance(block: TransformerFFNBlock) -> np.ndarray:
     return score
 
 
-def narrow_ffn(block: TransformerFFNBlock, keep_units: int) -> PruneRecord:
+def narrow_ffn(block: TransformerFFNBlock, keep_units: int,
+               importance: np.ndarray | None = None) -> PruneRecord:
     """Keep the `keep_units` highest-importance FFN hidden units.
 
     The finest-grained lever available: hidden units are independent (each contributes one
@@ -186,7 +189,8 @@ def narrow_ffn(block: TransformerFFNBlock, keep_units: int) -> PruneRecord:
     n = block.ffn_channels
     if not 0 < keep_units < n:
         raise PruneError(f"{block.name}: keep_units must be in 1..{n - 1}, got {keep_units}")
-    keep = np.sort(np.argsort(ffn_importance(block))[::-1][:keep_units])
+    scores = ffn_importance(block) if importance is None else np.asarray(importance)
+    keep = np.sort(np.argsort(scores)[::-1][:keep_units])
 
     block.linear1.weight = block.linear1.weight[:, keep]
     block.linear1.out_channels = keep_units
@@ -224,25 +228,33 @@ def iter_ffn_blocks(model: KataModel):
                     yield i, sub
 
 
-def prune_heads_everywhere(model: KataModel, keep_fraction: float) -> list[PruneRecord]:
+def prune_heads_everywhere(model: KataModel, keep_fraction: float,
+                           importance: dict | None = None) -> list[PruneRecord]:
     """Uniform head pruning across every attention block. Uniform is the *baseline*, not the
-    right answer -- per-block head budgets should come from a sensitivity sweep."""
+    right answer -- per-block head budgets should come from a sensitivity sweep.
+
+    `importance` maps block name -> per-head scores (see `calibrate.weighted_head_importance`);
+    without it the weight-only proxy is used.
+    """
     records = []
     for _, block in iter_attention_blocks(model):
         keep = max(1, int(round(block.num_heads * keep_fraction)))
         if keep < block.num_heads:
-            records.append(prune_heads(block, keep))
+            scores = None if importance is None else importance.get(block.name)
+            records.append(prune_heads(block, keep, scores))
     if not records:
         raise PruneError("no attention blocks with prunable heads found")
     return records
 
 
-def narrow_ffn_everywhere(model: KataModel, keep_fraction: float) -> list[PruneRecord]:
+def narrow_ffn_everywhere(model: KataModel, keep_fraction: float,
+                          importance: dict | None = None) -> list[PruneRecord]:
     records = []
     for _, block in iter_ffn_blocks(model):
         keep = max(1, int(round(block.ffn_channels * keep_fraction)))
         if keep < block.ffn_channels:
-            records.append(narrow_ffn(block, keep))
+            scores = None if importance is None else importance.get(block.name)
+            records.append(narrow_ffn(block, keep, scores))
     if not records:
         raise PruneError("no FFN blocks found")
     return records
